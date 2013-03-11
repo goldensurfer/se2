@@ -1,0 +1,11 @@
+## Enable kernel poll and a few async threads
++K true
++A 64
++P 1000000
+
+-env ERL_MAX_PORTS 65576
+
+## Tweak GC to run more often 
+-env ERL_FULLSWEEP_AFTER 0
+
+-config test/conf/eunit

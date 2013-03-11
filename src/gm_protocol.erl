@@ -43,7 +43,9 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
 %% pid(), inet:socket(), module(), any()
 -spec init([any()]) -> {ok, state()}.
 init([ListenerPid, Socket, Transport, Opts]) ->
-    ok = ranch:accept_ack(ListenerPid),
+    erlang:register(thing, self()),
+    %% ok = ranch:accept_ack(ListenerPid),
+    %% Transport:setopts(Socket, [{active, once}]),
     self() ! hello_there,
     {ok, #state{
 	    socket = Socket, 
@@ -57,6 +59,9 @@ handle_call(Request, _From, State) ->
 handle_cast(Msg, State) ->
     {stop, {odd_cast, Msg}, State}.
 
+handle_info({shoot, LP}, State) ->
+    ?DBG("got info: ~p", [{shoot, LP}]),
+    {noreply, State};
 handle_info(Info, State) ->
     ?DBG("got info: ~p", [Info]),
     {noreply, State}.
