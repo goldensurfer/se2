@@ -12,7 +12,7 @@
 -compile(export_all).
 -export([]).
 
--include_lib("se2/include/logging.hrl").
+-include_lib("serv/include/logging.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 stateful_test_() ->
