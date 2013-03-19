@@ -21,6 +21,9 @@ serv: all
 serv1: all
 	erl $(OPTS_COMMON) -s serv -config serv1
 
+play: all
+	erl $(OPTS_COMMON) -s play
+
 tests:  all $(REBAR)
 	sh -c "ERL_FLAGS=\"-args_file apps/serv/test/conf/vm.eunit.args\" rebar eunit skip_deps=true"
 
