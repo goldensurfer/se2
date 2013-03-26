@@ -8,4 +8,4 @@
 ## Tweak GC to run more often 
 -env ERL_FULLSWEEP_AFTER 0
 
--config test/conf/eunit
+-config apps/serv/test/conf/eunit

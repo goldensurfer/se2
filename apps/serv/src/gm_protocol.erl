@@ -26,7 +26,7 @@
 
 -type state() :: #state{}.
 
--include_lib("se2/include/logging.hrl").
+-include_lib("serv/include/logging.hrl").
 
 %%%===================================================================
 %%% API

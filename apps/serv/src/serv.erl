@@ -16,7 +16,12 @@
 %%%===================================================================
 
 start() ->
-    application:start(serv, permanent).
+    ok = application:start(ranch),
+    ok = application:start(gproc),
+    ok = application:start(inets),
+    ok = application:start(erlsom),
+    ok = application:start(lager),
+    ok = application:start(serv, permanent).
 
 %%%===================================================================
 %%% Internal functions

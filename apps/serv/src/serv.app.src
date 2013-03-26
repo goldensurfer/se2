@@ -1,11 +1,15 @@
 {application, serv,
  [
   {description, ""},
-  {vsn, "1"},
+  {vsn, "0.0.1"},
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  ranch,
+                  gproc,
+                  erlsom,
+                  lager
                  ]},
   {mod, { serv_app, []}},
   {env, []}

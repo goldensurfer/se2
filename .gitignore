@@ -3,3 +3,4 @@ deps
 log
 erl_crash.dump
 .eunit
+rel/serv
