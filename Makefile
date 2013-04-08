@@ -9,6 +9,9 @@ EUNIT_FLAGS:="ERL_FLAGS=\"-args_file test/conf/vm.eunit.args\""
 all: $(REBAR)
 	$(REBAR) get-deps compile
 
+shell: all
+	erl $(OPTS_COMMON)
+
 deps: $(REBAR)
 	$(REBAR) get-deps update-deps
 
