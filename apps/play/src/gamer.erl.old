@@ -1,19 +1,27 @@
+%%%-------------------------------------------------------------------
+%%% @author 237600 michna pawel  <michnap@p20312.mini.pw.edu.pl>
+%%% @copyright (C) 2013, 237600 michna pawel 
+%%% @doc
+%%%
+%%% @end
+%%% Created : 19 Mar 2013 by 237600 michna pawel  <michnap@p20312.mini.pw.edu.pl>
+%%%-------------------------------------------------------------------
 -module(gamer).
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/3]).
+-export([start_link/0]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
 
--record(state, {address, port}).
+-define(SERVER, ?MODULE). 
+
+-record(state, {}).
+
+-include_lib("serv/include/logging.hrl").
 
 %%%===================================================================
 %%% API
@@ -26,8 +34,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Address, Port, Nick) ->
-    gen_server:start_link(?MODULE, [Address, Port, Nick], []).
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -44,12 +52,10 @@ start_link(Address, Port, Nick) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Address, Port, Nick]) ->
-        {ok, Socket} = gen_tcp:connect(Address, Port, []),
-        String = io_lib:fwrite("<message type=\"playerLogin\"><playerLogin nick=\"~s\" gameType=\"5-in-line-tic-tac-toe\"/></message>", [Nick]),
-        gen_tcp:send(Socket, String),
-        gen_tcp:close(Socket),
-        {ok, #state{address=Address, port=Port}}.
+init([]) ->
+    ?ALERT("I'm the player!", []),
+    self() ! {connect, localhost, 1090},
+    {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -66,8 +72,7 @@ init([Address, Port, Nick]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {stop, {odd_call, _Request}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -80,7 +85,7 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {stop, {odd_cast, _Msg}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -92,11 +97,17 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({tcp, Data}, State) ->
-        {ok, Socket} = gen_tcp:connect(State#state.address, State#state.port, []),
 
-        gen_tcp:close(Socket),
-        {noreply, State}.
+handle_info({connect, Hostname, Port}, State) ->
+    {ok, Socket} = gen_tcp:connect(Hostname, Port, [binary]),
+    Bin = xml_error_msg(),
+    gen_tcp:send(Socket, Bin),
+    timer:sleep(timer:seconds(3)),
+    ok = gen_tcp:close(Socket),
+    {noreply, State};
+
+handle_info(_Info, State) ->
+    {stop, {odd_info, _Info}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -126,3 +137,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+xml_error_msg() ->
+    <<"<message type=\"error\">
+	[String with error message]
+    </message>">>.
