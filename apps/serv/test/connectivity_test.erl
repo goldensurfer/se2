@@ -23,11 +23,10 @@ stateful_test_() ->
       fun() -> ok end]}.
 
 setup() ->
-    ok = application:start(serv),
-    ok.
+    serv:start().
 
 cleanup(_State) ->
-    application:stop(serv).
+    serv:stop().
 
 test_serv_acceptor() ->
     {ok, Socket} = gen_tcp:connect(localhost, 1090, [binary]),
