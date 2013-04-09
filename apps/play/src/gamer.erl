@@ -13,7 +13,10 @@
          terminate/2,
          code_change/3]).
 
--record(state, {address, port}).
+-record(state, {address,
+                port,
+                positions=[]}).
+
 
 %%%===================================================================
 %%% API
@@ -94,6 +97,73 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({tcp, Data}, State) ->
         {ok, Socket} = gen_tcp:connect(State#state.address, State#state.port, []),
+        %%an error message which may appear from both sides as a response anytime
+        %%<message type="error">[String with error message]</message>
+        
+        %% HANDLE IT HERE
+
+        %%login request response sent by server
+        %%<message type="loginResponse">
+        %%      <response accept="yes/no"/>
+        %%       <!--
+        %%      
+        %%       tag present only when accept="no"
+        %%       Error ids:
+        %%       1 - wrong nick
+        %%       2 - improper game type
+        %%       3 - players pool overflow
+        %%       4 - master for this game already registered
+        %%       5 - wrong game type description data
+        %%       -->
+        %%       <error id="[int]"/>
+        %%</message>
+        
+        %%HANDLE HERE
+        
+        %% game state message sent from the game master to the server and then by
+        %% the server to all players in the game. After a game has finished server waits for
+        %% "thank you" or "error" message from all the players. 
+        %% 
+        %% <message type="gameState">
+        %%      <gameId id="[string]"/>
+        %%      <!--  one tag of the two below appears in message  -->
+        %%      <nextPlayer nick="[string]"/>
+        %%      <gameOver>
+        %%      <!--  this tag appears repeatedly for all the players  -->
+        %%              <player nick="[string]" result="loser/winner"/>
+        %%      </gameOver>
+        %%      <!--
+        %%      this tag will always appear. Not read by the server.
+        %%      -->
+        %%      <gameState>
+        %%      <!--
+        %%      When a player receives game state only the move of the opponent is sent in
+        %%      format <tac x='xPos' y='yPos'/>. No other information is sent as a game
+        %%      state, thus a player must remember all previous moves of the opponent.
+        %%      -->
+        %%      </gameState>
+        %%  </message>
+
+        %% HANDLE HERE
+        
+        %% <!--
+        %% message sent before shutting down server to all registered players and game master
+        %% -->
+        %% <message type="serverShutdown"/>
+
+        %% HANDLE HERE
+
+        %% <!--
+        %% server message with championship winners sent to all participants of this championship. A player may expect
+        %% this kind of message anytime when not playing any game. This list is sorted according to won and then lost values
+        %% -->
+        %% <message type="championsList">
+        %%      <!--
+        %%      this tag appears repeatedly for all registers players. This should be ordered by number of wins.
+        %%      -->
+        %%      <player nick="[string]" won="[int]" lost="[int]"/>
+        %% </message>
+        %%
 
         gen_tcp:close(Socket),
         {noreply, State}.
