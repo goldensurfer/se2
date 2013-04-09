@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3]).
+-export([start_link/3, test_xml/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -31,6 +31,29 @@
 %%--------------------------------------------------------------------
 start_link(Address, Port, Nick) ->
     gen_server:start_link(?MODULE, [Address, Port, Nick], []).
+
+%% testing XML
+test_xml(XmlFile) ->
+        {ok, Xml} = file:read_file(XmlFile),
+        {ok, Element, _} = erlsom:simple_form(Xml),
+        {_MsgTag, MsgAttributes, MsgContent} = Element,
+        [{"type", MsgType}] = MsgAttributes,
+        case MsgType of
+                "error" ->
+                        "error message received";
+                "loginResponse" ->
+                        "loginResponse received";
+                "gameState" ->
+                        "gameState received";
+                "serverShutDown" ->
+                        "serverShutdown received";
+                "championsList" ->
+                        "championsList received";
+                _ ->
+                        "unknown message received"
+        end.
+
+
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -97,6 +120,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({tcp, Data}, State) ->
         {ok, Socket} = gen_tcp:connect(State#state.address, State#state.port, []),
+
         %%an error message which may appear from both sides as a response anytime
         %%<message type="error">[String with error message]</message>
         

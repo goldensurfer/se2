@@ -1,0 +1,4 @@
+<message type="championsList">
+        <player nick="Paul" won="2" lost="0"/>
+        <player nick="John" won="1" lost="1"/>
+</message>
