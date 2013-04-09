@@ -3,6 +3,8 @@
 
 -export([handle_sax_event/2]).
 
+-export([t/0, t1/0, t2/0, t3/0, t4/0]).
+
 -type cmd_name() :: unknown | register.
 -type cmd() :: {cmd_name(), any()}.
 -type gs() :: undefined | error | registered | tournament | playing.
@@ -38,13 +40,22 @@ init(ListenerPid, Socket, Transport, _Opts = []) ->
 loop(State) ->
     case (?s.transport):recv(?s.socket, 0, timer:seconds(10)) of
 	{ok, Data0} ->
-	    Data1 = binary_to_list(Data0),
-	    Data = ?s.buffer++Data1,
-	    {ok, State1, Tail} = erlsom:parse_sax(Data, State, fun stream_parser:handle_sax_event/2),
-	    handle_parsed(State1#state{buffer = Tail});
+	    Data = State#state.buffer++Data0,
+	    %% {ok, State1, Tail} = erlsom:parse_sax(Data, State, fun stream_parser:handle_sax_event/2),
+	    try xmerl_scan:string(Data) of
+		{Element, Tail} ->
+		    handle_xml(Element, State),
+		    loop(State1#state{buffer = Tail});
+	    catch
+		_:_ ->
+		    loop(State1#state{buffer = Tail})
+	    end;
 	_ ->
 	    ok = (?s.transport):close(?s.socket)
     end.
+
+handle_xml(E, State) ->
+    
 
 handle_parsed(State = #state{ps = {error, Reason}}) ->
     Template = "<error>parsing error: ~p</error>",
@@ -61,27 +72,27 @@ handle_parsed(State = #state{cmds = [{playerLogin, {_Game, _Nickname}} | T]}) ->
     (?s.transport):send(?s.socket, "<error>already registered</error>"),
     (?s.transport):close(?s.socket).
 
-handle_sax_event(Tag, State = #state{parser = Parser, ps = ok}) ->
-    Res = case sax_event(Tag, Parser) of
-	      {ok, NewParser} ->
-		  io:fwrite(user, "~p -> ~p~n", [{Parser, Tag}, NewParser]),
-		  ?s{parser = NewParser};
-	      {ok, NewParser, Cmd} ->
-		  io:fwrite(user, "~p -> ~p~n", [{Parser, Tag}, NewParser]),
-		  ?s{parser = NewParser, cmds = ?s.cmds ++ [Cmd]};
-	      {error, Reason} ->
-		  io:fwrite(user, "{_, ~p} ==== ~p~n", [Tag, Reason]),
-		  ?s{ps = {error, Reason}}
-	  end;
-
-handle_sax_event(Tag, State = #state{ps = {error, Reason}}) ->
-    io:fwrite(user, "{_, ~p} ==== ~p~n", [Tag, Reason]),
-    State.
-
 %% sax_event/2 works as FSM where 
 %% the first arg is the symbol and 
 %% the second arg is state of FSM
 %% if it complites the parse of any message, it returns it as a command
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+
+handle_sax_event(Tag, State = #state{parser = Parser, ps = ok}) ->
+    Res = case sax_event(Tag, Parser) of
+	      {ok, NewParser} ->
+		  ?s{parser = NewParser};
+	      {ok, NewParser, Cmd} ->
+		  ?s{parser = NewParser, cmds = ?s.cmds ++ [Cmd]};
+	      {error, Reason} ->
+		  ?s{ps = {error, Reason}}
+	  end;
+handle_sax_event(Tag, State = #state{ps = {error, Reason}}) ->
+    State.
 
 %% skip all junk
 sax_event({ignorableWhitespace,_}, State) ->
@@ -96,6 +107,8 @@ sax_event({startElement, [], "message", [], Attrs}, startDocument) ->
     case get_attr("type", Attrs) of
 	{ok, "playerLogin"} ->
 	    {ok, playerLoginStart};
+	{ok, "gameMasterLogin"} ->
+	    {ok, gameMasterLoginStart};
 	{ok, "error"} ->
 	    {ok, errorMessageStart};
 	false ->
@@ -117,12 +130,24 @@ sax_event({startElement, [], "playerLogin", [], Attrs}, playerLoginStart) ->
 	_ ->
 	    {error, {parsing, playerLogin_should_have_name_and_game_attrs}}
     end;
-sax_event({endElement,[],"playerLogin",[]}, {playerLoginEnd, Params}) ->
+sax_event({endElement, [], "playerLogin",[]}, {playerLoginEnd, Params}) ->
     {ok, endMessage, {playerLogin, Params}};
-sax_event({endElement, [], "message", []}, endMessage) ->
-    {ok, hadMessage};
+
+%% gameMasterLogin message
+sax_event({startElement, [], "gameMasterLogin", [], Attrs}, gameMasterLoginStart) ->
+    case get_attrs(["id", "gameType", "playersMin", "playersMax"], Attrs)  of
+	false ->
+	    {error, {parsing, gameMasterLoginStart_should_have_name_and_game_attrs}};
+	[Id, GameType, PlayersMin, PlayersMax] ->
+	    {ok, {gameMasterLoginStart, {Id, GameType, PlayersMin, PlayersMax}}}
+    end;
+sax_event({endElement, [], "gameMasterLogin",[]}, {gameMasterLoginStart, Params}) ->
+    {ok, endMessage, {playerLogin, Params}};
+
 
 %% ready to parse new message
+sax_event({endElement, [], "message", []}, endMessage) ->
+    {ok, hadMessage};
 sax_event(endDocument, hadMessage) ->
     {ok, start}.
 
@@ -133,4 +158,38 @@ get_attr(Name, Attrs) ->
 	false ->
 	    false
     end.
-    
+
+get_attrs(Names, Attrs) ->
+    R1 = [ get_attr(Name, Attrs) || Name <- Names ],
+    R2 = [ Val || {ok, Val} <- R1 ],
+    length(Names) == length(R2) andalso
+	R2.
+
+t() ->
+    <<"<message type=\"playerLogin\">
+<playerLogin nick=\"Jaedong\" gameType=\"Starcraft\"/>
+</message>">>.
+
+t1() ->
+    <<"<message type=\"playerLogin\">
+<playerLogin nick=\"Jaedong\" gameType=\"Starcraft\"/>
+</message>
+<message type">>.
+
+t2() ->
+    <<"<message type=\"playerLogin\">
+<playerLogin nick=\"Jaedong\" game">>.
+
+t3() ->
+    <<"<message type=\"playerLogin\">
+<playerLogin nick=\"Jaedong\" gameType=\"Starcraft\"/>
+</message>
+<message type=\"playerLogin\">
+<playerLogin nick=\"Jaedong\" gameType=\"Starcraft\"/>
+</message>">>.
+
+
+t4() ->
+    <<"<message type=\"playerLogin\">
+<playerLogin nick=\"Jaedong\" gameType=\"Starcraft\"/>
+</message><message type">>.
