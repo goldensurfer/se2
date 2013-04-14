@@ -40,16 +40,11 @@ init(ListenerPid, Socket, Transport, _Opts = []) ->
 loop(State) ->
     case (?s.transport):recv(?s.socket, 0, timer:seconds(10)) of
 	{ok, Data0} ->
-	    Data = State#state.buffer++Data0,
-	    %% {ok, State1, Tail} = erlsom:parse_sax(Data, State, fun stream_parser:handle_sax_event/2),
-	    try xmerl_scan:string(Data) of
-		{Element, Tail} ->
-		    handle_xml(Element, State),
-		    loop(State1#state{buffer = Tail});
-	    catch
-		_:_ ->
-		    loop(State1#state{buffer = Tail})
-	    end;
+	    Data1 = binary_to_list(Data0),
+	    Data = ?s.buffer++Data1,
+	    Callback = fun stream_parser:handle_sax_event/2,
+	    {ok, State1, Tail} = erlsom:parse_sax(Data, State, Callback),
+	    handle_parsed(State1#state{buffer = Tail});
 	_ ->
 	    ok = (?s.transport):close(?s.socket)
     end.
@@ -64,7 +59,8 @@ handle_parsed(State = #state{ps = {error, Reason}}) ->
     (?s.transport):close(?s.socket);
 handle_parsed(State = #state{cmds = []}) ->
     loop(State);
-handle_parsed(State = #state{cmds = [{playerLogin, {Game, Nickname}} | T], player_state = undefined}) ->
+handle_parsed(State = #state{cmds = [{playerLogin, {Game, Nickname}} | T], 
+			     player_state = undefined}) ->
     gproc:add_local_property({registered_for_game, Game}, Nickname),
     gproc:add_local_property({registered}, Game),
     handle_parsed(?s{cmds = T, player_state = registered});
@@ -93,6 +89,10 @@ handle_sax_event(Tag, State = #state{parser = Parser, ps = ok}) ->
 	  end;
 handle_sax_event(Tag, State = #state{ps = {error, Reason}}) ->
     State.
+
+%% sax_event/2 works as FSM where the first arg is the symbol and 
+%% the second arg is state of FSM if it complites the parse of 
+%% any message, it returns it as a command
 
 %% skip all junk
 sax_event({ignorableWhitespace,_}, State) ->

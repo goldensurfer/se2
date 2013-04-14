@@ -21,7 +21,7 @@
 %% ===================================================================
 
 start_link() ->
-    {M, F, A} = {serv_client, start_link, []},
+    {M, F, A} = {client, start_link, []},
     supervisor:start_link({local, ?MODULE}, ?MODULE, [{M, F, A}]).
 
 add_child(Ref, Args) ->
