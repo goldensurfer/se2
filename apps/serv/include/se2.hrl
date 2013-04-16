@@ -1,0 +1,1 @@
+-define(MAGIC, "5-in-line-tic-tac-toe").
