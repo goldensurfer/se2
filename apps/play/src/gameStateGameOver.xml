@@ -1,1 +1,1 @@
-<message type="gameState"><game id="5-in-line-tic-tac-toe"/><gameOver><player nick="John" result="loser"/><player nick="Paul" result="winner"/></gameOver><gameState><tac x='1' y='2'/></gameState></message>
+<message type="gameState"><gameId id="5-in-line-tic-tac-toe"/><gameOver><player nick="John" result="loser"/><player nick="Paul" result="winner"/></gameOver><gameState><tac x='1' y='2'/></gameState></message>
