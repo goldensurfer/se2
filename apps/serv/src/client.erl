@@ -20,14 +20,19 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
+-define(s, State#state).
+
+-type gs() :: undefined | error | registered | tournament | playing.
 
 -record(state, {
 	  socket,
 	  transport,
-	  buffer = []
+	  buffer = [],
+	  pl_state :: gs()
 	 }).
 
 -include_lib("serv/include/logging.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%%===================================================================
@@ -107,25 +112,33 @@ handle_cast(Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({tcp, Data0}, State) ->
+handle_info({tcp, _Socket, DataBin}, State) ->
+    Data0 = binary_to_list(DataBin),
+    ?D("got data: ~p", [Data0]),
     Data = State#state.buffer++Data0,
     try xmerl_scan:string(Data) of
 	{Element, Tail} ->
 	    case handle_xml(Element, State) of
-		ok ->
-		    {noreply, rec(State#state{buffer = Tail})};
+		{ok, State1} ->
+		    {noreply, rec(State1#state{buffer = Tail})};
+		{ok, State1, Msg} ->
+		    gen_tcp:send(?s.socket, Msg),
+		    {noreply, rec(State1#state{buffer = Tail})};
 		{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
-		    {stop, Reason, rec(State#state{buffer = Tail})}
+		    {stop, Reason, State}
 	    end
     catch
-	_:_ ->
+	ErrType:ErrMsg ->
+	    ?D("parsing xml: ~p", [{ErrType, ErrMsg}]),
 	    {noreply, rec(State#state{buffer = Data})}
     end;
 handle_info({accept_ack, ListenerPid}, State) ->
     ranch:accept_ack(ListenerPid),
     {noreply, rec(State)};
+handle_info({tcp_closed, _Socket}, State) ->
+    {stop, normal, State};
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.
 
@@ -158,12 +171,54 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+gav(Name, El) ->
+    sxml:get_attr_value(Name, El).
+
+gse(Name, El) ->
+    sxml:get_sub_element(Name, El).
+
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
     State.
 
-handle_xml(_E, _State) ->
-    erlang:error(not_impl).
+handle_xml(E, State) ->
+    ?D("~p", [{E, State}]),
+    case gav(type, E) of
+	"ping" ->
+	    {ok, State, sxml:pong()};
+	"playerLogin" ->
+	    E1 = gse(playerLogin, E),
+	    case {gav(nick, E1), gav(gameType, E1)} of
+		{false, _} ->
+		    {stop, incomplete_xml, sxml:error("nick attribute missing")};
+		{_, false} ->
+		    {stop, incomplete_xml, sxml:error("gameType attribute missing")};
+		{Nick, GameType} ->
+		    login(Nick, GameType, State)
+	    end;
+	X ->
+	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
+	    ?D(ErrMsg, []),
+	    ?ERROR(ErrMsg, []),
+	    {stop, unknown_xml_message_type, ErrMsg}
+    end.
+
+%%%===================================================================
+%%% Commands
+%%%===================================================================
+
+login(Nick, GameType, State = #state{pl_state = undefined}) ->
+    try gproc:add_local_name({player, Nick}) of
+	true ->
+	    gproc:add_local_property({registered_for_game, GameType}, Nick),
+	    gproc:add_local_property({registered}, GameType),
+	    {ok, ?s{pl_state = registered}, sxml:login_response()}
+    catch 
+	_:_ ->
+	    {stop, wrong_nick, sxml:login_response(wrong_nick)}
+    end;
+login(_, _, _) ->
+    {stop, already_registered, sxml:login_response(already_registered)}.
 
 %%%===================================================================
 %%% Tests
@@ -181,8 +236,6 @@ xml_test() ->
 			     ok
 		     catch
 			 ErrType:ErrMsg ->
-			     io:fwrite(user, "~p~n", 
-				       [{ErrType, ErrMsg}]),
 			     err
 		     end,
 		{No, Arg, Res, Res} 

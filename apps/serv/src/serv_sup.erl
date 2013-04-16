@@ -23,6 +23,5 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    SCS = ?CHILD(serv_clients_sup, worker),
-    {ok, { {one_for_one, 5, 10}, [SCS]} }.
+    {ok, { {one_for_one, 5, 10}, []} }.
 

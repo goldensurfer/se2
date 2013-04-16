@@ -13,8 +13,11 @@
 -export([]).
 
 -define(HOST, localhost).
--define(PORT, 1090).
+-define(CPORT, 1090).
+-define(GPORT, 1091).
 -define(INET_PARAMS, [binary]).
+
+-define(TIMEOUT, 1000).
 
 -include_lib("serv/include/logging.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -22,10 +25,10 @@
 stateful_test_() ->
     {foreach, fun () -> setup() end,
      fun (State) -> cleanup(State) end,
-     [%% {timeout, 100, fun test_serv_acceptor/0},
-      {timeout, 100, fun test_serv_hello_world/0},
-      {timeout, 100, fun test_serv_playerLogin/0}
-      %% fun() -> ok end
+     [
+      %% {timeout, 100, fun test_serv_hello_world/0},
+      %% {timeout, 100, fun test_serv_playerLogin/0},
+      {timeout, 100, fun test_serv_GMLogin/0}
      ]}.
 
 setup() ->
@@ -35,30 +38,63 @@ cleanup(_State) ->
     serv:stop().
 
 test_serv_acceptor() ->
-    {ok, Socket} = gen_tcp:connect(?HOST, ?PORT, ?INET_PARAMS),
+    {ok, Socket} = gen_tcp:connect(?HOST, ?CPORT, ?INET_PARAMS),
     ok = gen_tcp:close(Socket).
     
 test_serv_hello_world() ->
-    {ok, Socket} = gen_tcp:connect(?HOST, ?PORT, ?INET_PARAMS),
-    Bin = xml_error_msg(),
-    gen_tcp:send(Socket, Bin),
-    timer:sleep(timer:seconds(3)),
-    ok = gen_tcp:close(Socket).
+    {ok, Socket} = gen_tcp:connect(?HOST, ?CPORT, ?INET_PARAMS),
+    gen_tcp:send(Socket, sxml:ping()),
+    receive 
+	{tcp, _, DataBin} ->
+	    ?D("~p", [DataBin]),
+	    Data = binary_to_list(DataBin),
+	    {El, _Tail} = xmerl_scan:string(Data),
+	    ?D("~p", [El])
+    after ?TIMEOUT ->
+	    error(timeout)
+    end.
 
 test_serv_playerLogin() ->
-    {ok, Socket} = gen_tcp:connect(?HOST, ?PORT, ?INET_PARAMS),
+    {ok, Socket} = gen_tcp:connect(?HOST, ?CPORT, ?INET_PARAMS),
     Bin = xml_playerLogin_msg(),
     gen_tcp:send(Socket, Bin),
-    timer:sleep(timer:seconds(3)),
+    receive 
+	{tcp, _, DataBin} ->
+	    ?D("~p", [DataBin]),
+	    Data = binary_to_list(DataBin),
+	    {El, _Tail} = xmerl_scan:string(Data),
+	    ?D("~p", [El])
+    after ?TIMEOUT ->
+	    error(timeout)
+    end,
+    ok = gen_tcp:close(Socket).
+
+test_serv_GMLogin() ->
+    {ok, Socket} = gen_tcp:connect(?HOST, ?GPORT, ?INET_PARAMS),
+    Bin = xml_GMLogin_msg(),
+    gen_tcp:send(Socket, Bin),
+    receive 
+	{tcp, _, DataBin} ->
+	    ?D("~p", [DataBin]),
+	    Data = binary_to_list(DataBin),
+	    {El, _Tail} = xmerl_scan:string(Data),
+	    ?D("~p", [El])
+    after ?TIMEOUT ->
+	    error(timeout)
+    end,
     ok = gen_tcp:close(Socket).
     
-xml_error_msg() ->
-    <<"<message type=\"error\">[String with error message]</message>">>.
-
 xml_playerLogin_msg() ->
-    <<"<message type=\"playerLogin\">
-<playerLogin nick=\"Jaedong\" gameType=\"Starcraft\"/>
-</message>">>.
+    sxml:msg({message, [{type, playerLogin}], [{playerLogin, [{nick, "Jaedong"}, {gameType, "tick tack toe"}], []}]}).
+
+xml_GMLogin_msg() ->
+    GML = {gameMasterLogin, 
+	   [{id, "1"}, 
+	    {gameType, "tick tack toe"},
+	    {playersMin, 2},
+	    {playersMax, 2}
+	   ], []},
+    sxml:msg({message, [{type, gameMasterLogin}], [GML]}).
 
 sax_xml() -> filename:join([codeDir(), "../test/sax_example.xml"]).
 codeDir() -> filename:dirname(code:which(?MODULE)).

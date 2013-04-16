@@ -27,6 +27,8 @@
                              ?DBG("~s with params ~p failed with ~p:~p in ~p", [??X, A, Class, Reason, erlang:get_stacktrace()])
                      end)).
 
+-define(D(Fmt, Args), io:fwrite(user, "~p@~p:~p || "++Fmt++"~n", [self(), ?MODULE, ?LINE] ++ Args)).
+
 -define(DBG(Format, Args, Tag), ?LOG(Format, Args, ?debug, Tag)).
 -define(DBG(Format, Args),      ?DBG(Format, Args, [])).
 -define(DBG(Format),            ?DBG(Format, [])).
