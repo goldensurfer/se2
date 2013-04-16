@@ -11,9 +11,12 @@
 %% helpers
 -export([msg/1, get_sub_element/2, get_attr_value/2]).
 
-%% protocol
+%% protocol client
 -export([login_response/0, login_response/1]).
 -export([error/1]).
+
+%% protocol gm
+-export([gm_login/2]).
 
 %% testing stuff
 -export([ping/0, pong/0]).
@@ -77,12 +80,23 @@ login_response(already_registered) ->
     login_response_error(6);
 login_response(xml_error) ->
     login_response_error(7);
-
 %%%===================================================================
 %%% gm messages
 %%%===================================================================
 login_response(gm_already_registered) ->
-    login_response_error(4).
+    login_response_error(4);
+login_response(improper_game_type) ->
+    login_response_error(2).
+
+gm_login(Id, Magic) ->
+    GML = {gameMasterLogin, 
+	   [{id, Id}, 
+	    {gameType, Magic},
+	    {playersMin, 2},
+	    {playersMax, 2}
+	   ], []},
+    sxml:msg({message, [{type, gameMasterLogin}], [GML]}).
+
 
 %%%===================================================================
 %%% Internal functions
@@ -90,4 +104,3 @@ login_response(gm_already_registered) ->
 
 msg(El) ->
     lists:flatten(xmerl:export_simple_content([El], xmerl_xml)).
-
