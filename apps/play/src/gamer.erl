@@ -3,7 +3,7 @@
 
 %% API
 -export([start_link/3]).
-
+-compile(export_all).
 
 
 %% gen_server callbacks
@@ -18,7 +18,8 @@
                 port,
                 positions=[],
                 buffer = [],
-		socket
+		socket,
+                gameId = "5-in-line-tic-tac-toe"
                }).
 
 -include_lib("xmerl/include/xmerl.hrl").
@@ -57,7 +58,7 @@ init([Address, Port, Nick]) ->
 	io:fwrite("Connecting...~n",[]),
         String = io_lib:fwrite("<message type=\"playerLogin\"><playerLogin nick=\"~s\" gameType=\"5-in-line-tic-tac-toe\"/></message>", [Nick]),
         gen_tcp:send(Socket, String),
-        {ok, #state{address=Address, port=Port, socket=Socket}}.
+        {ok, #state{address=Address, port=Port, socket=Socket, gameId="5-in-line-tic-tac-toe"}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -103,41 +104,21 @@ handle_cast(_Msg, State) ->
 handle_info({tcp, _Socket, DataBin}, State) ->
 	Data0 = DataBin,
 	Data = State#state.buffer++Data0,
-
-        %%an error message which may appear from both sides as a response anytime
-        %%<message type="error">[String with error message]</message>
-        
         try xmerl_scan:string(Data) of
                 {Element, Tail} ->
-                        case extractMsgType(Element) of 
-				{msgtype, "error"} ->
-					{error, Msg} = extractError(Element),
-					io:fwrite("Error received: ~p~n", [Msg]),
-					State#state{buffer = Tail};
-				{msgtype, "loginResponse"} ->
-					LoginResponse = extractLoginResponse(Element),
-					State#state{buffer = Tail},
-					case LoginResponse of
-						{loginResponse, ResponseValue} ->
-							io:fwrite("Login response from server ~p: ~p~n", [State#state.address,ResponseValue]);
-						{loginResponse, ResponseValue, [ErrorId]} ->
-							io:fwrite("Login response: ~p~p~n", [ResponseValue,ErrorId])
-					end;
-				{msgtype, "gameState"} ->
-					GameState = extractGameState(Element),
-					case GameState of
-						{{gameId,GameId},{nextPlayer,NextPlayerId},GState}->
-							io:fwrite("Received Game State: game id = ~p, next player = ~p, state = ~p", [GameId,NextPlayerId,GState]);
-						{{gameId,GameId},{results,Results},GState} ->
-							io:fwrite("Receive Game Over. Results: ~p",[Results])
-					end
-			end
-
+                        case handle_xml(Element,State) of
+                                {ok,State1} ->
+                                        {noreply, State1#state{buffer=Tail}};
+                                {stop,Reason,Msg} ->
+                                        gen_tcp:send(State#state.socket,Msg),
+                                        gen_tcp:close(State#state.socket),
+                                        {stop,Reason,State}
+                        end
         catch
-		ErrType:ErrMsg ->
-			io:fwrite("PARSING ERROR: ~p~n", [{ErrType,ErrMsg}])
-	end,
-        
+                ErrType:ErrMsg ->
+                        io:fwrite("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
+                        {noreply,State#state{buffer = Data}}
+        end,
         {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -168,126 +149,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-extractMsgType({xmlElement, message, _ExpandedName, _nsinfo, _namespace, [], _pos, Attributes, _content, _language, _xmlbase,
-         _elementdef}) ->
-        [{xmlAttribute,type,_exp_name,_nsinfo,_namespaces,[{message,1}],_pos,_lang, MsgType,_normalized}] = Attributes,
-       {msgtype, MsgType}. 
 
-extractError({xmlElement,message,message,_nsinfo,
-              _namespace,
-              [],_pos,
-              [{xmlAttribute,type,_expname,_nsinfo,_namaspace,
-                [{message,1}],
-                _pos,_lang,"error",_normalized}],
-              Content,
-              _lang,_xmlbase,
-              _elementdef}) ->
-        [{xmlText,[{message,1}],
-                    1,_lang,Error,_textOrCdata}] = Content,
-        {error, Error}.
-
-extractLoginResponse(XmlElement) ->
-        XmlElements = extractXmlElementsFromContent(XmlElement),
-        ResponseElement = [R || {xmlElement,response,_,_,_,[{message,_}],_,[{xmlAttribute,accept,_,_,_,
-                                                                     [{response,_},{message,_}],
-                                                                     _,_,_,_}],
-                                       [],_,_,_} = R <- XmlElements],
-        [{xmlElement,response,_,_,_,[{message,_}],_,[{xmlAttribute,accept,_,_,_,
-                                                     _, _,_,ResponseValue,_}],
-                       [],_,_,_}]= ResponseElement,
-        XmlElements,
-        ErrorElement = [E || {xmlElement,error,_,_,_,[{message,_}],_,
-                                [{xmlAttribute,id,_,_,_,_,_,_,_,_}],[],_,_,_} = E <- XmlElements],
-         if ErrorElement =/= [] ->
-                        [{xmlElement,error,_,_,
-                          _,
-                          [{message,_}],
-                          _,
-                          [{xmlAttribute,id,_,_,_,
-                            _,
-                            _,_,ErrorId,_}],
-                          [],_,_,_}] = ErrorElement;
-                true ->
-                        ErrorId = []
-        end,
-        if ErrorId == [] ->
-                        {loginResponse, ResponseValue};
-                true ->
-                        {loginResponse, ResponseValue, [ErrorId]}
-        end.
-
-extractGameState(XmlElement) ->
-        XmlElements = extractXmlElementsFromContent(XmlElement),
-        GameElement = [R || {xmlElement,gameId,_,_,_,[{message,_}],_,[{xmlAttribute,id,_,_,_,_,_,_,_,_}],[],_,_,_} =
-                            R <- XmlElements],
-        [{xmlElement,gameId,_,_,_,[{message,_}],_,[{xmlAttribute,id,_,_,_,_,_,_,GameId,_}],_,_,_,_}] = GameElement,
-        NextPlayerElement = [R || {xmlElement,nextPlayer,_,_,_,[{message,_}],_,[{xmlAttribute,nick,_,_,_,_,_,_,_,_}],[],_,_,_} =
-                            R <- XmlElements],
-        if NextPlayerElement =/= []->
-                                [{xmlElement,nextPlayer,_,_,_,[{message,_}],_,[{xmlAttribute,nick,_,_,_,_,_,_,NextPlayerId,_}],_,_,_,_}] = NextPlayerElement;
-                                true ->
-                        NextPlayerId = []
-        end,
-        GameOverElement = [R || {xmlElement,gameOver,_,_,_,[{message,_}],_,_,_,_,_,_} =
-                            R <- XmlElements],
-        if GameOverElement =/= [] ->
-                        PlayersElement = extractXmlElementsFromContent(hd(GameOverElement)),
-                        Results = lists:foldl(fun(Elem, Result) -> [{getPlayerNick(Elem),getPlayerResult(Elem)}|Result] end, [], PlayersElement);
-                        true ->
-                        Results = []
-        end,
-        GameStateElement = [R || {xmlElement,gameState,_,_,_,[{message,_}],_,_,_,_,_,_} =
-                            R <- XmlElements],
-        {xmlElement,gameState,_,_,_,_,_,_,[Move],_,_,_} = hd(GameStateElement),
-        MoveAttributes = getAttributes(Move),
-        [{xmlAttribute,Cor1,_,_,_,_,_,_,Cor1Value,_},
-          {xmlAttribute,Cor2,_,_,_,_,_,_,Cor2Value,_}] = MoveAttributes,
-        {xmlElement, MoveType,_,_,_,_,_,_,_,_,_,_} = Move,
-        State = {move, MoveType, Cor1, Cor1Value, Cor2, Cor2Value},
-        if NextPlayerId =/= [] ->
-                        {{gameId,GameId},{nextPlayer,NextPlayerId},State};
-                true ->
-                        {{gameId,GameId},{results, Results},State}
-        end.
-
-extractChampionsList(XmlElement) ->
-        PlayersElement = extractXmlElementsFromContent(XmlElement),
-        Results = lists:foldl(fun(Elem, Result) -> [{getPlayerNick(Elem),{won,getPlayerWon(Elem)},{lost,getPlayerLost(Elem)}}|Result] end, [], PlayersElement),
-        {championsList, Results}.
-
-getPlayerWon(XmlElement) ->
-        Attributes = getAttributes(XmlElement),
-        WonAttribute = hd([E || {xmlAttribute,won,_,_,_,_,_,_,_WonValue,_}= E <- Attributes]),
-        {xmlAttribute,won,_,_,_,_,_,_,Won,_} = WonAttribute,
-        Won.
-
-getPlayerLost(XmlElement) ->
-        Attributes = getAttributes(XmlElement),
-        LostAttribute = hd([E || {xmlAttribute,lost,_,_,_,_,_,_,_LostValue,_}= E <- Attributes]),
-        {xmlAttribute,lost,_,_,_,_,_,_,Lost,_} = LostAttribute,
-        Lost.
-
-
-extractXmlElementsFromContent(XmlElement) ->
-                        {xmlElement,_,_,_, _,_,_,_,Content,_,_,_} = XmlElement,
-                        [Xml || {xmlElement,_,_,_,_,_,_,_,_,_,_,_} = Xml <- Content].
-
-getAttributes(XmlElement) ->
-        {xmlElement,_,_,_,_,_,_,Attributes,_,_,_,_} = XmlElement,
-        Attributes.
-
-getPlayerNick(XmlElement) ->
-        Attributes = getAttributes(XmlElement),
-        NickAttribute = hd([E || {xmlAttribute,nick,_,_,_,_,_,_,_Nick,_}= E <- Attributes]),
-        {xmlAttribute,nick,_,_,_,_,_,_,Nick,_} = NickAttribute,
-        Nick.
-
-
-getPlayerResult(XmlElement) ->
-        Attributes = getAttributes(XmlElement),
-        ResultAttribute = hd([E || {xmlAttribute,result,_,_,_,_,_,_,_Result,_}= E <- Attributes]),
-        {xmlAttribute,result,_,_,_,_,_,_,Result,_} = ResultAttribute,
-        Result.
 
 %%%==================
 %%%XML parsing
@@ -314,3 +176,81 @@ get_attr_value(Name, #xmlElement{} = El) ->
 msg(El) ->
 	    lists:flatten(xmerl:export_simple_content([El], xmerl_xml)).
 
+handle_xml(E, State) ->
+        case get_attr_value(type, E) of
+                "error" ->
+                        msgInfo(error,State),
+                        #xmlElement{content=Content}  = E,
+                        [#xmlText{value=Error}] = Content,
+                        io:fwrite("Received error: ~p~n",[Error]),
+                        {ok, State};
+                "loginResponse" ->
+                        msgInfo(loginResponse, State),
+                        E1 = get_sub_element(response, E),
+                        Accept = get_attr_value(accept,E1),
+                        case Accept of
+                                "no" ->
+                                        io:fwrite("Login denied!~n", []),
+                                        E2 = get_sub_element(error,E),
+                                        ErrorId = get_attr_value(id, E2),
+                                        io:fwrite("Error id = ~p: ", [ErrorId]),
+                                        case ErrorId of
+                                                "1" ->
+                                                        io:fwrite("wrong nick.~n",[]);
+                                                "2" ->
+                                                        io:fwrite("improper game type.~n",[]);
+                                                "3" ->
+                                                        io:fwrite("players pool overflow.~n",[]);
+                                                "5" ->
+                                                        io:fwrite("wrong game type description data")
+                                        end;
+                                "yes" ->
+                                        io:fwrite("Login accepted by server ~p!~n", [State#state.address])
+                        end,
+                        {ok,State};
+                "gameState" ->
+                        msgInfo(gameState, State),
+                        "5-in-line-tic-tac-toe" = get_attr_value(id,get_sub_element(gameId, E)),
+                        E2 = get_sub_element(nextPlayer, E),
+                        if E2 == false ->
+                                        io:fwrite("Game Over!~n", []),
+                                        E3 = get_sub_element(gameOver, E),
+                                        #xmlElement{content=Content} = E3,
+                                        Players = getPlayers(Content),
+                                        Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(result, Elem)}|Result] end, [],Players),
+                                        lists:foreach(fun({Nick,Result}) -> io:fwrite("Player ~p is a ~p.~n",[Nick,Result]) end, Players1);
+
+                                true ->
+                                        Nick = get_attr_value(nick, E2),
+                                        io:fwrite("Next player to move: ~p~n", [Nick])
+                        end,
+                        E4 = get_sub_element(gameState, E),
+                        E5 = get_sub_element(tic, E4),
+                        if E5 == false ->
+                                        E6 = get_sub_element(tac,E4),
+                                        X = get_attr_value(x, E6),
+                                        Y = get_attr_value(y, E6),
+                                        io:fwrite("Last move: tac, x=~p, y=~p~n",[X,Y]);
+                                true ->
+                                        X = get_attr_value(x,E5),
+                                        Y = get_attr_value(y, E5),
+                                        io:fwrite("Last move: tic, x=~p, y=~p~n",[X,Y])
+                        end,
+                        {ok, State};
+                "serverShutdown" ->
+                        msgInfo(serverShutdown,State),
+                        {ok, State};
+                "championsList" ->
+                        msgInfo(championsList,State),
+                        #xmlElement{content=Content} = E,
+                        Players = getPlayers(Content),
+                        Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(won, Elem),get_attr_value(lost,Elem)}|Result] end, [], Players),
+                        lists:foreach(fun({Nick,Won,Lost}) -> io:fwrite("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, Players1),
+                        {ok, State}
+        end.
+
+getPlayers(List) ->
+        [E || {xmlElement,player,_,_,_,_,_,_,_,_,_,_} = E <- List].
+
+msgInfo(Msg,State) ->
+        io:fwrite("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
