@@ -104,13 +104,13 @@ handle_info({tcp, Data}, State) ->
         %%an error message which may appear from both sides as a response anytime
         %%<message type="error">[String with error message]</message>
         
-        try xmerl_scan:string(Data) of
-                {Element, Tail} ->
-                        case extractMsgType(Element) of 
-                                {msgType, "error
-        catch
-
-                        end;
+  %      try xmerl_scan:string(Data) of
+  %              {Element, Tail} ->
+  %                      case extractMsgType(Element) of 
+  %                              {msgType, "error
+  %      catch
+%
+%                        end;
         
         %%login request response sent by server
         %%<message type="loginResponse">
