@@ -16,7 +16,7 @@
 start(_StartType, _StartArgs) ->
     Res = serv_sup:start_link(),
     TcpOpts = [{mode, list}, {port, 1090}, {active, true}],
-    ranch:start_listener(play_socket, 1, ranch_tcp, TcpOpts, stream_parser, []),
+    ranch:start_listener(play_socket, 1, ranch_tcp, TcpOpts, client, []),
     Res.
 
 stop(_State) ->
