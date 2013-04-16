@@ -19,6 +19,7 @@
 
 -define(TIMEOUT, 1000).
 
+-include_lib("serv/include/se2.hrl").
 -include_lib("serv/include/logging.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -71,7 +72,6 @@ test_serv_playerLogin() ->
 
 test_serv_GMLogin() ->
     {ok, Socket} = gen_tcp:connect(?HOST, ?GPORT, ?INET_PARAMS),
-    Bin = xml_GMLogin_msg(),
     gen_tcp:send(Socket, Bin),
     receive 
 	{tcp, _, DataBin} ->
@@ -85,16 +85,7 @@ test_serv_GMLogin() ->
     ok = gen_tcp:close(Socket).
     
 xml_playerLogin_msg() ->
-    sxml:msg({message, [{type, playerLogin}], [{playerLogin, [{nick, "Jaedong"}, {gameType, "tick tack toe"}], []}]}).
-
-xml_GMLogin_msg() ->
-    GML = {gameMasterLogin, 
-	   [{id, "1"}, 
-	    {gameType, "tick tack toe"},
-	    {playersMin, 2},
-	    {playersMax, 2}
-	   ], []},
-    sxml:msg({message, [{type, gameMasterLogin}], [GML]}).
+    sxml:msg({message, [{type, playerLogin}], [{playerLogin, [{nick, "Jaedong"}, {gameType, ?MAGIC}], []}]}).
 
 sax_xml() -> filename:join([codeDir(), "../test/sax_example.xml"]).
 codeDir() -> filename:dirname(code:which(?MODULE)).

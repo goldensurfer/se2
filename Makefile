@@ -15,8 +15,11 @@ shell: all
 deps: $(REBAR)
 	$(REBAR) get-deps update-deps
 
-run: all
-	erl $(OPTS_COMMON) -s serv
+serv: all
+	erl $(OPTS_COMMON) -s serv -config serv
+
+serv1: all
+	erl $(OPTS_COMMON) -s serv -config serv1
 
 tests:  all $(REBAR)
 	sh -c "ERL_FLAGS=\"-args_file apps/serv/test/conf/vm.eunit.args\" rebar eunit skip_deps=true"

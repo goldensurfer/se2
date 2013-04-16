@@ -31,6 +31,7 @@
 	  state :: gs()
 	 }).
 
+-include_lib("serv/include/se2.hrl").
 -include_lib("serv/include/logging.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -47,7 +48,6 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
 %%%===================================================================
 
 init([ListenerPid, Socket, Transport, _Opts = []]) ->
-    gproc:add_local_property({?MODULE}, true),
     self() ! {accept_ack, ListenerPid},
     {ok, #state{
 	    socket = Socket, 
@@ -140,21 +140,23 @@ handle_xml(E, State) ->
 %%% Commands
 %%%===================================================================
 
-login(Id, "tick tack toe" = GameType, PlayersMin, PlayersMax, State = #state{state = undefined}) ->
-    try gproc:add_local_name({game_master, GameType}) of
-	true ->
-	    gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
-	    gproc:add_local_property({gm}, {GameType}),
-	    {ok, ?s{state = registered}, sxml:gm_login_response()}
-    catch 
-	_:_ ->
-	    {stop, wrong_id, sxml:gm_login_response(gm_already_registered)}
-    end;
+login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = undefined}) ->
+    %% try gproc:add_local_name({game_master, GameType}) of
+    %% 	true ->
+    gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
+    gproc:add_local_property({gm}, {GameType}),
+    {ok, ?s{state = registered}, sxml:login_response()};
+%% login() ->
+
+    %% catch 
+    %% 	_:_ ->
+    %% 	    {stop, wrong_id, sxml:gm_login_response(gm_already_registered)}
+    %% end;
 login(_, OtherGame, _, _, #state{state = undefined}) ->
     ?ERROR("logging with improper game type: ~p", [OtherGame]),
-    {stop, improper_game_type, sxml:gm_login_response(improper_game_type)};
+    {stop, improper_game_type, sxml:login_response(improper_game_type)};
 login(_, _, _, _, _) ->
-    {stop, already_registered, sxml:gm_login_response(already_registered)}.
+    {stop, already_registered, sxml:login_response(already_registered)}.
 
 %%%===================================================================
 %%% Tests
