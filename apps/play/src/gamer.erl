@@ -17,7 +17,8 @@
 -record(state, {address,
                 port,
                 positions=[],
-                buffer = []
+                buffer = [],
+		socket
                }).
 
 
@@ -51,11 +52,11 @@ start_link(Address, Port, Nick) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Address, Port, Nick]) ->
-        {ok, Socket} = gen_tcp:connect(Address, Port, []),
+        {ok, Socket} = gen_tcp:connect(Address, Port, [{mode, list}]),
+	io:fwrite("Connecting...~n",[]),
         String = io_lib:fwrite("<message type=\"playerLogin\"><playerLogin nick=\"~s\" gameType=\"5-in-line-tic-tac-toe\"/></message>", [Nick]),
         gen_tcp:send(Socket, String),
-        gen_tcp:close(Socket),
-        {ok, #state{address=Address, port=Port}}.
+        {ok, #state{address=Address, port=Port, socket=Socket}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -98,84 +99,44 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({tcp, Data}, State) ->
-        {ok, Socket} = gen_tcp:connect(State#state.address, State#state.port, []),
+handle_info({tcp, _Socket, DataBin}, State) ->
+	Data0 = DataBin,
+	Data = State#state.buffer++Data0,
 
         %%an error message which may appear from both sides as a response anytime
         %%<message type="error">[String with error message]</message>
         
-  %      try xmerl_scan:string(Data) of
-  %              {Element, Tail} ->
-  %                      case extractMsgType(Element) of 
-  %                              {msgType, "error
-  %      catch
-%
-%                        end;
-        
-        %%login request response sent by server
-        %%<message type="loginResponse">
-        %%      <response accept="yes/no"/>
-        %%       <!--
-        %%      
-        %%       tag present only when accept="no"
-        %%       Error ids:
-        %%       1 - wrong nick
-        %%       2 - improper game type
-        %%       3 - players pool overflow
-        %%       4 - master for this game already registered
-        %%       5 - wrong game type description data
-        %%       -->
-        %%       <error id="[int]"/>
-        %%</message>
-        
-        %%HANDLE HERE
-        
-        %% game state message sent from the game master to the server and then by
-        %% the server to all players in the game. After a game has finished server waits for
-        %% "thank you" or "error" message from all the players. 
-        %% 
-        %% <message type="gameState">
-        %%      <gameId id="[string]"/>
-        %%      <!--  one tag of the two below appears in message  -->
-        %%      <nextPlayer nick="[string]"/>
-        %%      <gameOver>
-        %%      <!--  this tag appears repeatedly for all the players  -->
-        %%              <player nick="[string]" result="loser/winner"/>
-        %%      </gameOver>
-        %%      <!--
-        %%      this tag will always appear. Not read by the server.
-        %%      -->
-        %%      <gameState>
-        %%      <!--
-        %%      When a player receives game state only the move of the opponent is sent in
-        %%      format <tac x='xPos' y='yPos'/>. No other information is sent as a game
-        %%      state, thus a player must remember all previous moves of the opponent.
-        %%      -->
-        %%      </gameState>
-        %%  </message>
+        try xmerl_scan:string(Data) of
+                {Element, Tail} ->
+                        case extractMsgType(Element) of 
+				{msgtype, "error"} ->
+					{error, Msg} = extractError(Element),
+					io:fwrite("Error received: ~p~n", [Msg]),
+					State#state{buffer = Tail};
+				{msgtype, "loginResponse"} ->
+					LoginResponse = extractLoginResponse(Element),
+					State#state{buffer = Tail},
+					case LoginResponse of
+						{loginResponse, ResponseValue} ->
+							io:fwrite("Login response from server ~p: ~p~n", [State#state.address,ResponseValue]);
+						{loginResponse, ResponseValue, [ErrorId]} ->
+							io:fwrite("Login response: ~p~p~n", [ResponseValue,ErrorId])
+					end;
+				{msgtype, "gameState"} ->
+					GameState = extractGameState(Element),
+					case GameState of
+						{{gameId,GameId},{nextPlayer,NextPlayerId},GState}->
+							io:fwrite("Received Game State: game id = ~p, next player = ~p, state = ~p", [GameId,NextPlayerId,GState]);
+						{{gameId,GameId},{results,Results},GState} ->
+							io:fwrite("Receive Game Over. Results: ~p",[Results])
+					end
+			end
 
-        %% HANDLE HERE
+        catch
+		ErrType:ErrMsg ->
+			io:fwrite("PARSING ERROR: ~p~n", [{ErrType,ErrMsg}])
+	end,
         
-        %% <!--
-        %% message sent before shutting down server to all registered players and game master
-        %% -->
-        %% <message type="serverShutdown"/>
-
-        %% HANDLE HERE
-
-        %% <!--
-        %% server message with championship winners sent to all participants of this championship. A player may expect
-        %% this kind of message anytime when not playing any game. This list is sorted according to won and then lost values
-        %% -->
-        %% <message type="championsList">
-        %%      <!--
-        %%      this tag appears repeatedly for all registers players. This should be ordered by number of wins.
-        %%      -->
-        %%      <player nick="[string]" won="[int]" lost="[int]"/>
-        %% </message>
-        %%
-
-        gen_tcp:close(Socket),
         {noreply, State}.
 
 %%--------------------------------------------------------------------
