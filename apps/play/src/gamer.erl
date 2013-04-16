@@ -21,6 +21,7 @@
 		socket
                }).
 
+-include_lib("xmerl/include/xmerl.hrl").
 
 %%%===================================================================
 %%% API
@@ -287,3 +288,29 @@ getPlayerResult(XmlElement) ->
         ResultAttribute = hd([E || {xmlAttribute,result,_,_,_,_,_,_,_Result,_}= E <- Attributes]),
         {xmlAttribute,result,_,_,_,_,_,_,Result,_} = ResultAttribute,
         Result.
+
+%%%==================
+%%%XML parsing
+%%%=================
+get_sub_element(Name, #xmlElement{} = El) ->
+	#xmlElement{content = Content} = El,
+	case lists:keyfind(Name, #xmlElement.name, Content) of
+		false ->
+			false;
+		Tuple ->
+			Tuple
+	end.
+	
+
+get_attr_value(Name, #xmlElement{} = El) ->
+	#xmlElement{attributes = Attrs} = El,
+	case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
+		false ->
+			false;
+		At ->
+			At#xmlAttribute.value
+	end.
+	
+msg(El) ->
+	    lists:flatten(xmerl:export_simple_content([El], xmerl_xml)).
+
