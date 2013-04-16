@@ -1,9 +1,10 @@
 -module(gamer).
-
--behaviour(gen_server).
+%-compile(export_all).
 
 %% API
--export([start_link/3, test_xml/1]).
+-export([start_link/3]).
+
+
 
 %% gen_server callbacks
 -export([init/1,
@@ -15,7 +16,9 @@
 
 -record(state, {address,
                 port,
-                positions=[]}).
+                positions=[],
+                buffer = []
+               }).
 
 
 %%%===================================================================
@@ -31,29 +34,6 @@
 %%--------------------------------------------------------------------
 start_link(Address, Port, Nick) ->
     gen_server:start_link(?MODULE, [Address, Port, Nick], []).
-
-%% testing XML
-test_xml(XmlFile) ->
-        {ok, Xml} = file:read_file(XmlFile),
-        {ok, Element, _} = erlsom:simple_form(Xml),
-        {_MsgTag, MsgAttributes, MsgContent} = Element,
-        [{"type", MsgType}] = MsgAttributes,
-        case MsgType of
-                "error" ->
-                        "error message received";
-                "loginResponse" ->
-                        "loginResponse received";
-                "gameState" ->
-                        "gameState received";
-                "serverShutDown" ->
-                        "serverShutdown received";
-                "championsList" ->
-                        "championsList received";
-                _ ->
-                        "unknown message received"
-        end.
-
-
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -124,8 +104,14 @@ handle_info({tcp, Data}, State) ->
         %%an error message which may appear from both sides as a response anytime
         %%<message type="error">[String with error message]</message>
         
-        %% HANDLE IT HERE
+        try xmerl_scan:string(Data) of
+                {Element, Tail} ->
+                        case extractMsgType(Element) of 
+                                {msgType, "error
+        catch
 
+                        end;
+        
         %%login request response sent by server
         %%<message type="loginResponse">
         %%      <response accept="yes/no"/>
@@ -220,3 +206,123 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+extractMsgType({xmlElement, message, _ExpandedName, _nsinfo, _namespace, [], _pos, Attributes, _content, _language, _xmlbase,
+         _elementdef}) ->
+        [{xmlAttribute,type,_exp_name,_nsinfo,_namespaces,[{message,1}],_pos,_lang, MsgType,_normalized}] = Attributes,
+       {msgtype, MsgType}. 
+
+extractError({xmlElement,message,message,_nsinfo,
+              _namespace,
+              [],_pos,
+              [{xmlAttribute,type,_expname,_nsinfo,_namaspace,
+                [{message,1}],
+                _pos,_lang,"error",_normalized}],
+              Content,
+              _lang,_xmlbase,
+              _elementdef}) ->
+        [{xmlText,[{message,1}],
+                    1,_lang,Error,_textOrCdata}] = Content,
+        {error, Error}.
+
+extractLoginResponse(XmlElement) ->
+        XmlElements = extractXmlElementsFromContent(XmlElement),
+        ResponseElement = [R || {xmlElement,response,_,_,_,[{message,_}],_,[{xmlAttribute,accept,_,_,_,
+                                                                     [{response,_},{message,_}],
+                                                                     _,_,_,_}],
+                                       [],_,_,_} = R <- XmlElements],
+        [{xmlElement,response,_,_,_,[{message,_}],_,[{xmlAttribute,accept,_,_,_,
+                                                     _, _,_,ResponseValue,_}],
+                       [],_,_,_}]= ResponseElement,
+        XmlElements,
+        ErrorElement = [E || {xmlElement,error,_,_,_,[{message,_}],_,
+                                [{xmlAttribute,id,_,_,_,_,_,_,_,_}],[],_,_,_} = E <- XmlElements],
+         if ErrorElement =/= [] ->
+                        [{xmlElement,error,_,_,
+                          _,
+                          [{message,_}],
+                          _,
+                          [{xmlAttribute,id,_,_,_,
+                            _,
+                            _,_,ErrorId,_}],
+                          [],_,_,_}] = ErrorElement;
+                true ->
+                        ErrorId = []
+        end,
+        if ErrorId == [] ->
+                        {loginResponse, ResponseValue};
+                true ->
+                        {loginResponse, ResponseValue, [ErrorId]}
+        end.
+
+extractGameState(XmlElement) ->
+        XmlElements = extractXmlElementsFromContent(XmlElement),
+        GameElement = [R || {xmlElement,gameId,_,_,_,[{message,_}],_,[{xmlAttribute,id,_,_,_,_,_,_,_,_}],[],_,_,_} =
+                            R <- XmlElements],
+        [{xmlElement,gameId,_,_,_,[{message,_}],_,[{xmlAttribute,id,_,_,_,_,_,_,GameId,_}],_,_,_,_}] = GameElement,
+        NextPlayerElement = [R || {xmlElement,nextPlayer,_,_,_,[{message,_}],_,[{xmlAttribute,nick,_,_,_,_,_,_,_,_}],[],_,_,_} =
+                            R <- XmlElements],
+        if NextPlayerElement =/= []->
+                                [{xmlElement,nextPlayer,_,_,_,[{message,_}],_,[{xmlAttribute,nick,_,_,_,_,_,_,NextPlayerId,_}],_,_,_,_}] = NextPlayerElement;
+                                true ->
+                        NextPlayerId = []
+        end,
+        GameOverElement = [R || {xmlElement,gameOver,_,_,_,[{message,_}],_,_,_,_,_,_} =
+                            R <- XmlElements],
+        if GameOverElement =/= [] ->
+                        PlayersElement = extractXmlElementsFromContent(hd(GameOverElement)),
+                        Results = lists:foldl(fun(Elem, Result) -> [{getPlayerNick(Elem),getPlayerResult(Elem)}|Result] end, [], PlayersElement);
+                        true ->
+                        Results = []
+        end,
+        GameStateElement = [R || {xmlElement,gameState,_,_,_,[{message,_}],_,_,_,_,_,_} =
+                            R <- XmlElements],
+        {xmlElement,gameState,_,_,_,_,_,_,[Move],_,_,_} = hd(GameStateElement),
+        MoveAttributes = getAttributes(Move),
+        [{xmlAttribute,Cor1,_,_,_,_,_,_,Cor1Value,_},
+          {xmlAttribute,Cor2,_,_,_,_,_,_,Cor2Value,_}] = MoveAttributes,
+        {xmlElement, MoveType,_,_,_,_,_,_,_,_,_,_} = Move,
+        State = {move, MoveType, Cor1, Cor1Value, Cor2, Cor2Value},
+        if NextPlayerId =/= [] ->
+                        {{gameId,GameId},{nextPlayer,NextPlayerId},State};
+                true ->
+                        {{gameId,GameId},{results, Results},State}
+        end.
+
+extractChampionsList(XmlElement) ->
+        PlayersElement = extractXmlElementsFromContent(XmlElement),
+        Results = lists:foldl(fun(Elem, Result) -> [{getPlayerNick(Elem),{won,getPlayerWon(Elem)},{lost,getPlayerLost(Elem)}}|Result] end, [], PlayersElement),
+        {championsList, Results}.
+
+getPlayerWon(XmlElement) ->
+        Attributes = getAttributes(XmlElement),
+        WonAttribute = hd([E || {xmlAttribute,won,_,_,_,_,_,_,_WonValue,_}= E <- Attributes]),
+        {xmlAttribute,won,_,_,_,_,_,_,Won,_} = WonAttribute,
+        Won.
+
+getPlayerLost(XmlElement) ->
+        Attributes = getAttributes(XmlElement),
+        LostAttribute = hd([E || {xmlAttribute,lost,_,_,_,_,_,_,_LostValue,_}= E <- Attributes]),
+        {xmlAttribute,lost,_,_,_,_,_,_,Lost,_} = LostAttribute,
+        Lost.
+
+
+extractXmlElementsFromContent(XmlElement) ->
+                        {xmlElement,_,_,_, _,_,_,_,Content,_,_,_} = XmlElement,
+                        [Xml || {xmlElement,_,_,_,_,_,_,_,_,_,_,_} = Xml <- Content].
+
+getAttributes(XmlElement) ->
+        {xmlElement,_,_,_,_,_,_,Attributes,_,_,_,_} = XmlElement,
+        Attributes.
+
+getPlayerNick(XmlElement) ->
+        Attributes = getAttributes(XmlElement),
+        NickAttribute = hd([E || {xmlAttribute,nick,_,_,_,_,_,_,_Nick,_}= E <- Attributes]),
+        {xmlAttribute,nick,_,_,_,_,_,_,Nick,_} = NickAttribute,
+        Nick.
+
+
+getPlayerResult(XmlElement) ->
+        Attributes = getAttributes(XmlElement),
+        ResultAttribute = hd([E || {xmlAttribute,result,_,_,_,_,_,_,_Result,_}= E <- Attributes]),
+        {xmlAttribute,result,_,_,_,_,_,_,Result,_} = ResultAttribute,
+        Result.
