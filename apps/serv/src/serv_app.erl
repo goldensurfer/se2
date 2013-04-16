@@ -15,8 +15,9 @@
 %% before calling application:start(serv).
 start(_StartType, _StartArgs) ->
     Res = serv_sup:start_link(),
-    TcpOpts = [{mode, list}, {port, 1090}, {active, true}],
-    ranch:start_listener(play_socket, 1, ranch_tcp, TcpOpts, client, []),
+    TcpOpts = [{mode, binary}, {active, true}],
+    ranch:start_listener(play_socket, 1, ranch_tcp, [{port, 1090} | TcpOpts], client, []),
+    ranch:start_listener(gm_socket,   1, ranch_tcp, [{port, 1091} | TcpOpts], gm, []),
     Res.
 
 stop(_State) ->
