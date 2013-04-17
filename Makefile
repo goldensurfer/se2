@@ -2,7 +2,7 @@ REBAR=$(shell which rebar || echo ./rebar)
 
 ENV=ERL_CRASH_DUMP_SECONDS 1
 OPTS_COMMON=-pa apps/*/ebin -pa deps/*/ebin -env $(ENV) -boot start_sasl
-EUNIT_FLAGS:="ERL_FLAGS=\"-args_file test/conf/vm.eunit.args\""
+# EUNIT_FLAGS:="ERL_FLAGS=\"-args_file test/conf/vm.eunit.args\""
 
 .PHONY: deps
 
@@ -20,6 +20,9 @@ serv: all
 
 serv1: all
 	erl $(OPTS_COMMON) -s serv -config serv1
+
+play: all
+	erl $(OPTS_COMMON) -s play
 
 tests:  all $(REBAR)
 	sh -c "ERL_FLAGS=\"-args_file apps/serv/test/conf/vm.eunit.args\" rebar eunit skip_deps=true"
