@@ -10,6 +10,8 @@
 
 -behaviour(gen_server).
 
+-compile(export_all).
+
 %% API
 -export([start_link/4]).
 
@@ -72,6 +74,9 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
 		    {noreply, rec(State1#state{buffer = Tail})};
+		{stop, Reason, State = #state{}} ->
+		    gen_tcp:close(State#state.socket),
+		    {stop, Reason, State};
 		{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
@@ -110,11 +115,99 @@ rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
     State.
 
+icl(Msg) ->
+    {stop, incomplete_xml, sxml:error(Msg)}.
+
 handle_xml(E, State) ->
     ?D("~p", [{E, State}]),
-    case gav(type, E) of
+    Type = gav(type, E),
+    case Type of
+	"error" ->
+	    {stop, received_error, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
+	"beginGame" ->
+	    case {gse(gameId, E), gse(player, E)} of
+		{false, _} ->
+		    icl("gameId subelement missing");
+		{_, false} ->
+		    icl("player subelement missing");
+		{E1, E2} ->
+		    case {gav(id, E1),gav(nick, E2)} of
+			{false, _} ->
+			    icl("id attribute missing");
+			{_, false} ->
+			    icl("nick attribute missing");
+			{Id, Nick} ->
+			    ?D("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
+			    {ok, State}
+		    end
+	    end;
+	"move" ->
+	    case {gse(gameId, E), gse(move, E)} of
+		{false, _} ->
+		    icl("gameId subelement missing");
+		{_, false} ->
+		    icl("move subelement missing");
+		{E1, _E2} ->
+		    case gav(id, E1) of
+			false ->
+			    icl("id attribute missing");
+			_TheId ->
+			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
+			    {ok, State}
+		    end
+	    end;
+	"playerLeftGame" ->
+	    case {gse(player, E), gse(gameId, E)} of
+		{false, _} ->
+		    icl("player subelement missing");
+		{_, false} ->
+		    icl("gameId subelement missing");
+		{E1, E2} ->
+		    case {gav(nick, E1),gav(id, E2)} of
+			{false, _} ->
+			    icl("nick attribute missing");
+			{_, false} ->
+			    icl("id attribute missing");
+			{Nick, Id} ->
+			    ?D("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
+			    {ok, State}
+		    end
+	    end;
+	"serverShutdown" ->
+	    ?D("msg type: ~p", [Type]),
+	    {ok, State};
+	"gameState" ->
+	    case gse(gameId, E) of
+		false ->
+		    icl("gameId subelement missing");
+		GameId ->
+		    case {gse(nextPlayer, E), gse(gameOver, E)} of
+			{false, false} ->
+			    icl("please provide nextPlayer OR gameOver subelement");
+			{E1, false} ->
+			    case gav(nick, E1) of
+				false ->
+				    icl("nick attribute missing");
+				Nick ->
+				    ?D("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
+				    {ok, State}
+			    end;
+			{false, E2} ->
+			    case {gav(nick, E2),gav(result, E2)}  of
+				{false, _} ->
+				    icl("nick attribute missing");
+				{_, false} ->
+				    icl("result attribute missing");
+				{_, Res} when Res /= "winner", Res /= "loser" ->
+				    icl("result attribute: allowed values are loser or winner");
+				{Nick, Res} ->
+				    ?D("msg type: ~p/gameOver, gameId: ~p, nick: ~p, result", [Type, GameId, Nick, Res]),
+				    {ok, State}
+			    end
+		    end
+	    end;
 	"gameMasterLogin" ->
 	    E1 = gse(gameMasterLogin, E),
 	    case {gav(id, E1), gav(gameType, E1), gav(playersMin, E1), gav(playersMax, E1)} of
@@ -143,8 +236,8 @@ handle_xml(E, State) ->
 login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = undefined}) ->
     %% try gproc:add_local_name({game_master, GameType}) of
     %% 	true ->
-    gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
-    gproc:add_local_property({gm}, {GameType}),
+    %% gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
+    %% gproc:add_local_property({gm}, {GameType}),
     {ok, ?s{state = registered}, sxml:login_response()};
 %% login() ->
 

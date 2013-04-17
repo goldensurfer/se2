@@ -10,6 +10,8 @@
 
 -behaviour(gen_server).
 
+-compile(export_all).
+
 %% API
 -export([start_link/4]).
 
@@ -42,6 +44,17 @@
 start_link(ListenerPid, Socket, Transport, Opts) ->
     gen_server:start_link(?MODULE, [ListenerPid, Socket, Transport, Opts], []).
 
+sendLR() ->
+    R = {response, [{accept, "yes"}], []},
+    Msg = {message, [{type, "loginResponse"}], [R]},
+    gen_server:cast(?MODULE, msg(Msg)).
+
+sendBG() ->
+    GI = {gameId, [{id, "123"}], []},
+    N = {player, [{nick, "Jaedong"}], []},
+    Msg = {message, [{type, "beginGame"}], [GI, N]},
+    gen_server:cast(?MODULE, msg(Msg)).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -58,7 +71,10 @@ handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
 handle_cast(Msg, State) ->
-    {stop, {odd_cast, Msg}, State}.
+    gen_tcp:send(State#state.socket, Msg),
+    {noreply, State}.
+%% handle_cast(Msg, State) ->
+%%     {stop, {odd_cast, Msg}, State}.
 
 handle_info({tcp, _Socket, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
@@ -72,6 +88,9 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
 		    {noreply, rec(State1#state{buffer = Tail})};
+		{stop, Reason, State = #state{}} ->
+		    gen_tcp:close(State#state.socket),
+		    {stop, Reason, State};
 		{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
@@ -100,6 +119,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+msg(Msg) ->
+    sxml:msg(Msg).
+
+icl(Msg) ->
+    {stop, incomplete_xml, sxml:error(Msg)}.
+
 gav(Name, El) ->
     sxml:get_attr_value(Name, El).
 
@@ -112,18 +137,67 @@ rec(State) ->
 
 handle_xml(E, State) ->
     ?D("~p", [{E, State}]),
-    case gav(type, E) of
+    Type = gav(type, E),
+    ?D("msg type: ~p", [Type]),
+    case Type of
+	"logout" ->
+	    ?D("msg type: ~p", [Type]),
+	    {ok, State};
+	"error" ->
+	    {stop, received_error, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
 	"playerLogin" ->
 	    E1 = gse(playerLogin, E),
 	    case {gav(nick, E1), gav(gameType, E1)} of
 		{false, _} ->
-		    {stop, incomplete_xml, sxml:error("nick attribute missing")};
+		    icl("nick attribute missing");
 		{_, false} ->
-		    {stop, incomplete_xml, sxml:error("gameType attribute missing")};
+		    icl("gameType attribute missing");
 		{Nick, GameType} ->
+		    ?D("msg type ~p, nick ~p, gametype ~p", [Type, Nick, GameType]),
 		    login(Nick, GameType, State)
+	    end;
+	"move" ->
+	    case {gse(gameId, E), gse(move, E)} of
+		{false, _} ->
+		    icl("gameId subelement missing");
+		{_, false} ->
+		    icl("move subelement missing");
+		{E1, _E2} ->
+		    case gav(id, E1) of
+			false ->
+			    icl("id attribute missing");
+			_TheId ->
+			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
+			    {ok, State}
+		    end
+	    end;
+	"leaveGame" ->
+	    case gse(gameId, E) of
+		false ->
+		    icl("gameId subelement missing");
+		E1 ->
+		    case gav(id, E1) of
+			false ->
+			    icl("id attribute missing");
+			_TheId ->
+			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
+			    {ok, State}
+		    end
+	    end;
+	"thank you" ->
+	    case gse(gameId, E) of
+		false -> 
+		    icl("gameId subelement missing");
+		E1 ->
+		    case gav(id, E1) of
+			false ->
+			    icl("id attribute missing");
+			_TheId ->
+			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
+			    {ok, State}
+		    end
 	    end;
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
@@ -139,8 +213,8 @@ handle_xml(E, State) ->
 login(Nick, GameType, State = #state{pl_state = undefined}) ->
     try gproc:add_local_name({player, Nick}) of
 	true ->
-	    gproc:add_local_property({registered_for_game, GameType}, Nick),
-	    gproc:add_local_property({registered}, GameType),
+	    %% gproc:add_local_property({registered_for_game, GameType}, Nick),
+	    %% gproc:add_local_property({registered}, GameType),
 	    {ok, ?s{pl_state = registered}, sxml:login_response()}
     catch 
 	_:_ ->

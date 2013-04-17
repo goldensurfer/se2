@@ -49,7 +49,6 @@ get_attr_value(Name, #xmlElement{} = El) ->
     end,
     %% ?D("gav. get ~p with result ~p from ~p", [Name, R, El]),
     R.
-
 %%%===================================================================
 %%% messages construction
 %%%===================================================================

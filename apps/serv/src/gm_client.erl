@@ -10,8 +10,13 @@
 
 -behaviour(gen_server).
 
+-compile(export_all).
+
 %% API
 -export([start_link/3, start_link/4]).
+
+%% test API
+-export([sendGS/0, sendLogin/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -39,7 +44,16 @@ start_link(Host, Port, Id) ->
     start_link(Host, Port, Id, ?MAGIC).
 
 start_link(Host, Port, Id, Game) ->
-    gen_server:start_link(?MODULE, [Host, Port, Id, Game], []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Host, Port, Id, Game], []).
+
+sendGS() ->
+    GI = {gameId, [{id, "123"}], []},
+    NP = {nextPlayer, [{nick, "TestPlayer"}], []},
+    gen_server:cast(?SERVER, msg({message, [{type, "gameState"}], [GI, NP]})).
+
+sendLogin() ->
+    Msg = sxml:msg({message, [{type, playerLogin}], [{playerLogin, [{nick, "Jaedong"}, {gameType, ?MAGIC}], []}]}),
+    gen_server:cast(?SERVER, Msg).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -54,10 +68,11 @@ handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
+    gen_tcp:send(State#state.socket, Msg),
     {noreply, State}.
 
-handle_info({tcp, Socket, DataBin}, State) ->
+handle_info({tcp, _Socket, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
     ?D("got data: ~p", [Data0]),
     Data = State#state.buffer++Data0,
@@ -93,6 +108,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+msg(Msg) ->
+    sxml:msg(Msg).
 
 handle_xml(E, State) ->
     ?D("~p", [{E, State}]),
