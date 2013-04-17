@@ -1,10 +1,8 @@
 -module(gamer).
-%-compile(export_all).
+-compile(export_all).
 
 %% API
 -export([start_link/3]).
--compile(export_all).
-
 
 %% gen_server callbacks
 -export([init/1,
@@ -13,6 +11,14 @@
          handle_info/2,
          terminate/2,
          code_change/3]).
+
+%% for communication testing
+-export([testThankYou/0,
+	 testLeaveGame/0,
+	 testLogout/0,
+	 testTic/0,
+	 testError/0,
+	 testPlayerLogin/0]).
 
 -record(state, {address,
                 port,
@@ -36,7 +42,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Address, Port, Nick) ->
-    gen_server:start_link(?MODULE, [Address, Port, Nick], []).
+	gen_server:start_link({local,?MODULE}, ?MODULE, [Address, Port, Nick], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -88,8 +94,10 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_cast(Msg, State) ->
+	gen_tcp:send(State#state.socket, Msg),
+	{noreply, State}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -109,6 +117,9 @@ handle_info({tcp, _Socket, DataBin}, State) ->
                         case handle_xml(Element,State) of
                                 {ok,State1} ->
                                         {noreply, State1#state{buffer=Tail}};
+				{ok,State1,Msg} ->
+					gen_tcp:send(State#state.socket,Msg),
+					{noreply, State1#state{buffer=Tail}};
                                 {stop,Reason,Msg} ->
                                         gen_tcp:send(State#state.socket,Msg),
                                         gen_tcp:close(State#state.socket),
@@ -236,7 +247,8 @@ handle_xml(E, State) ->
                                         Y = get_attr_value(y, E5),
                                         io:fwrite("Last move: tic, x=~p, y=~p~n",[X,Y])
                         end,
-                        {ok, State};
+
+			{ok, State, thankYouMsg()};
                 "serverShutdown" ->
                         msgInfo(serverShutdown,State),
                         {ok, State};
@@ -248,6 +260,54 @@ handle_xml(E, State) ->
                         lists:foreach(fun({Nick,Won,Lost}) -> io:fwrite("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, Players1),
                         {ok, State}
         end.
+
+thankYouMsg() ->
+	Msg = {message, [{type, "thank you"}], [{gameId, [{id, "5-in-line-tic-tac-toe"}], []}] },
+	msg(Msg).
+
+leaveGameMsg()->
+	Msg = {message, [{type,"leaveGame"}], [{gameId, [{id, "5-in-line-tic-tac-toe"}], []}]},
+	msg(Msg).
+
+logoutMsg() ->
+	Msg = {message, [{type,"logout"}],[]},
+	msg(Msg).
+
+ticMsg() ->
+	%Msg = {tic,[{x,"1"},{y,"2"}],[]},
+	Msg = {message, [{type,"move"}], [
+				{gameId, [{id,"5-in-line-tic-tac-toe"}],[]},
+				{move,[],[{tic,[{x,"1"},{y,"2"}],[]}]}
+				]},
+	msg(Msg).
+
+errorMsg() ->
+	Msg = {message, [{type, "error"}], ["this is a test error"]},
+	msg(Msg).
+
+playerLoginMsg() ->
+	Msg = {message, [{type, "playerLogin"}], [{playerLogin, [{nick,"pawelMichna"},{gameType,"5-in-line-tic-tac-toe"}], []}]},
+	msg(Msg).
+
+
+testThankYou() ->
+	gen_server:cast(gamer, thankYouMsg()).
+
+testLeaveGame() ->
+	gen_server:cast(gamer, leaveGameMsg()).
+
+testLogout() ->
+	gen_server:cast(gamer, logoutMsg()).
+
+testTic() ->
+	gen_server:cast(gamer, ticMsg()).
+
+testError() ->
+	gen_server:cast(gamer, errorMsg()).
+
+testPlayerLogin() ->
+	gen_server:cast(gamer, playerLoginMsg()).
+
 
 getPlayers(List) ->
         [E || {xmlElement,player,_,_,_,_,_,_,_,_,_,_} = E <- List].
