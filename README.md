@@ -27,3 +27,6 @@ connecting to a given server
 Communication with server:
 adding incoming stream to a buffer until a correct XML message is recognized, 
 otherwise fire an error and crash
+
+
+For further reading refer to apps/play/src/gamer.erl - there are comments describing particular functions.
