@@ -2,7 +2,10 @@
 %%% @author Paul Peregud <>
 %%% @copyright (C) 2013, Paul Peregud
 %%% @doc
-%%%
+%%% 
+%%% This module contains helpers for work with XML and some templates
+%%% for xml commands. All templates should be moved here eventually.
+%%% 
 %%% @end
 %%% Created : 16 Apr 2013 by Paul Peregud <>
 %%%-------------------------------------------------------------------

@@ -1,3 +1,13 @@
+%%%-------------------------------------------------------------------
+%%% @author 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
+%%% @copyright (C) 2013, 190033 peregud pavel
+%%% @doc
+%%% 
+%%% Starts and stops serv application.
+%%% 
+%%% @end
+%%% Created :  5 Mar 2013 by 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
+%%%-------------------------------------------------------------------
 -module(serv_app).
 
 -behaviour(application).

@@ -3,6 +3,12 @@
 %%% @copyright (C) 2013, 190033 peregud pavel
 %%% @doc
 %%%
+%%% This module is a GM client. It handles it's TCP connection, 
+%%% xml parsing and commands. Uses gen_server behavior but it is not
+%%% part of supervision tree.
+%%%
+%%% Needs major refactoring.
+%%%
 %%% @end
 %%% Created : 16 Apr 2013 by 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
 %%%-------------------------------------------------------------------
@@ -28,6 +34,9 @@
 	  socket,
 	  buffer = []
 	 }).
+
+-type state() :: #state{}.
+-type msg() :: binary().
 
 -define(s, State#state).
 
@@ -112,6 +121,11 @@ code_change(_OldVsn, State, _Extra) ->
 msg(Msg) ->
     sxml:msg(Msg).
 
+%% this function handles Game Master's specific part of XML protocol. 
+-spec handle_xml(#xmlElement{}, state()) ->
+			{ok, NewState::state()} |
+			{ok, NewState::state(), Response::msg()} |
+			{stop, Error::atom(), ErrorMsg::msg()}.
 handle_xml(E, State) ->
     ?D("~p", [{E, State}]),
     case gav(type, E) of
