@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4]).
+-export([start_link/3, start_link/4]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -35,8 +35,11 @@
 %%% API
 %%%===================================================================
 
+start_link(Host, Port, Id) ->
+    start_link(Host, Port, Id, ?MAGIC).
+
 start_link(Host, Port, Id, Game) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [Host, Port, Id, Game], []).
+    gen_server:start_link(?MODULE, [Host, Port, Id, Game], []).
 
 %%%===================================================================
 %%% gen_server callbacks
