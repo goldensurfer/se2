@@ -3,6 +3,8 @@
 %%% @copyright (C) 2013, 190033 peregud pavel
 %%% @doc
 %%%
+%%% Supervisor for clients. 
+%%%
 %%% @end
 %%% Created :  5 Mar 2013 by 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
 %%%-------------------------------------------------------------------

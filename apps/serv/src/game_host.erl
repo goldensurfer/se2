@@ -3,6 +3,8 @@
 %%% @copyright (C) 2013, 190033 peregud pavel
 %%% @doc
 %%%
+%%% This module handles game's lifecycle from Servers POV.
+%%%
 %%% @end
 %%% Created :  9 Apr 2013 by 190033 peregud pavel <peregudp@p20310.mini.pw.edu.pl>
 %%%-------------------------------------------------------------------

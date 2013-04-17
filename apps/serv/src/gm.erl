@@ -3,6 +3,12 @@
 %%% @copyright (C) 2013, Paul Peregud
 %%% @doc
 %%%
+%%% This module handles Game Masters's TCP connection, xml parsing 
+%%% and commands. Uses gen_server behavior and is a part 
+%%% of supervision tree.
+%%%
+%%% Needs major refactoring.
+%%%
 %%% @end
 %%% Created : 14 Apr 2013 by Paul Peregud <pawel@kari.lan>
 %%%-------------------------------------------------------------------
@@ -24,14 +30,16 @@
 -define(SERVER, ?MODULE). 
 -define(s, State#state).
 
--type gs() :: undefined | error | registered | tournament | playing.
-
 -record(state, {
 	  socket,
 	  transport,
 	  buffer = [],
 	  state :: gs()
 	 }).
+
+-type gs() :: undefined | error | registered | tournament | playing.
+-type state() :: #state{}.
+-type msg() :: binary().
 
 -include_lib("serv/include/se2.hrl").
 -include_lib("serv/include/logging.hrl").
@@ -118,6 +126,12 @@ rec(State) ->
 icl(Msg) ->
     {stop, incomplete_xml, sxml:error(Msg)}.
 
+%% this function handles Game Master's specific part of XML protocol. 
+-spec handle_xml(#xmlElement{}, state()) ->
+			{ok, NewState::state()} |
+			{ok, NewState::state(), Response::msg()} |
+			{stop, Error::atom(), ErrorMsg::msg()} |
+			{stop, Reason::atom(), NewState::state()}. %% this one is for graceful termination
 handle_xml(E, State) ->
     ?D("~p", [{E, State}]),
     Type = gav(type, E),
