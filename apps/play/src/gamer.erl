@@ -1,5 +1,6 @@
 -module(gamer).
 %-compile(export_all).
+-behaviour(gen_server).
 
 %% API
 -export([start_link/3]).
