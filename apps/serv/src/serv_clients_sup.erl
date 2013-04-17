@@ -21,7 +21,7 @@
 %% ===================================================================
 
 start_link() ->
-    {M, F, A} = {serv_client, start_link, []},
+    {M, F, A} = {client, start_link, []},
     supervisor:start_link({local, ?MODULE}, ?MODULE, [{M, F, A}]).
 
 add_child(Ref, Args) ->
@@ -35,4 +35,3 @@ init([{M, F, A}]) ->
     {ok,{{simple_one_for_one,10,10},
          [{undefined, {M, F, A}, transient, 3000, worker, [M]}]
         }}.
-

@@ -12,5 +12,8 @@
                   lager
                  ]},
   {mod, { serv_app, []}},
-  {env, []}
+  {env, [
+	 {client_port, 1090},
+	 {gm_port, 1091}
+  ]}
  ]}.
