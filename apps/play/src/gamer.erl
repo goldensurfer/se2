@@ -219,6 +219,8 @@ handle_xml(E, State) ->
                                         io:fwrite("Login accepted by server ~p!~n", [State#state.address])
                         end,
                         {ok,State};
+		"beginGame" ->
+			msgInfo(beginGame, State);
                 "gameState" ->
                         msgInfo(gameState, State),
                         "5-in-line-tic-tac-toe" = get_attr_value(id,get_sub_element(gameId, E)),
