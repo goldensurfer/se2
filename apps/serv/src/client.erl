@@ -52,7 +52,7 @@ sendLR() ->
 sendBG() ->
     GI = {gameId, [{id, "123"}], []},
     N = {player, [{nick, "Jaedong"}], []},
-    Msg = {message, [{type, "gameBegin"}], [GI, N]},
+    Msg = {message, [{type, "beginGame"}], [GI, N]},
     gen_server:cast(?MODULE, msg(Msg)).
 
 %%%===================================================================
@@ -213,8 +213,8 @@ handle_xml(E, State) ->
 login(Nick, GameType, State = #state{pl_state = undefined}) ->
     try gproc:add_local_name({player, Nick}) of
 	true ->
-	    gproc:add_local_property({registered_for_game, GameType}, Nick),
-	    gproc:add_local_property({registered}, GameType),
+	    %% gproc:add_local_property({registered_for_game, GameType}, Nick),
+	    %% gproc:add_local_property({registered}, GameType),
 	    {ok, ?s{pl_state = registered}, sxml:login_response()}
     catch 
 	_:_ ->

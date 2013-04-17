@@ -44,7 +44,7 @@ start_link(Host, Port, Id) ->
     start_link(Host, Port, Id, ?MAGIC).
 
 start_link(Host, Port, Id, Game) ->
-    gen_server:start_link(?MODULE, [Host, Port, Id, Game], []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Host, Port, Id, Game], []).
 
 sendGS() ->
     GI = {gameId, [{id, "123"}], []},

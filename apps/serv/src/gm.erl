@@ -236,8 +236,8 @@ handle_xml(E, State) ->
 login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = undefined}) ->
     %% try gproc:add_local_name({game_master, GameType}) of
     %% 	true ->
-    gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
-    gproc:add_local_property({gm}, {GameType}),
+    %% gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
+    %% gproc:add_local_property({gm}, {GameType}),
     {ok, ?s{state = registered}, sxml:login_response()};
 %% login() ->
 
