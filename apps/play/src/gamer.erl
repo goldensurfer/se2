@@ -1,5 +1,5 @@
 -module(gamer).
--compile(export_all).
+%-compile(export_all).
 
 %% API
 -export([start_link/3]).
@@ -87,7 +87,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Handling cast messages
+%% Handling cast messages. This is used for testing sending messages to a server.
 %%
 %% @spec handle_cast(Msg, State) -> {noreply, State} |
 %%                                  {noreply, State, Timeout} |
@@ -102,7 +102,7 @@ handle_cast(Msg, State) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Handling all non call/cast messages
+%% Handling all non call/cast messages. This is used for receiving data over TCP.
 %%
 %% @spec handle_info(Info, State) -> {noreply, State} |
 %%                                   {noreply, State, Timeout} |
@@ -112,15 +112,15 @@ handle_cast(Msg, State) ->
 handle_info({tcp, _Socket, DataBin}, State) ->
 	Data0 = DataBin,
 	Data = State#state.buffer++Data0,
-        try xmerl_scan:string(Data) of
+        try xmerl_scan:string(Data) of  %trying to parse Data as XML
                 {Element, Tail} ->
                         case handle_xml(Element,State) of
-                                {ok,State1} ->
+                                {ok,State1} ->          % the case when player does not need to asnwer
                                         {noreply, State1#state{buffer=Tail}};
-				{ok,State1,Msg} ->
+				{ok,State1,Msg} ->      % the case when player has to answer
 					gen_tcp:send(State#state.socket,Msg),
 					{noreply, State1#state{buffer=Tail}};
-                                {stop,Reason,Msg} ->
+                                {stop,Reason,Msg} ->    % error
                                         gen_tcp:send(State#state.socket,Msg),
                                         gen_tcp:close(State#state.socket),
                                         {stop,Reason,State}
@@ -130,7 +130,12 @@ handle_info({tcp, _Socket, DataBin}, State) ->
                         io:fwrite("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
                         {noreply,State#state{buffer = Data}}
         end,
-        {noreply, State}.
+        {noreply, State};
+handle_info({tcp_closed, _Socket}, State) ->
+        io:fwrite("TCP connection closed.~n", []),
+        {stop, normal, State};
+handle_info(Info, State) ->
+        {stop, {odd_info, Info}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -143,8 +148,9 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
-    ok.
+terminate(Reason, _State) ->
+        io:fwrite("Player terminating because of ~p~n.", [Reason]),
+        ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -157,14 +163,17 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-
-%%%==================
+%%%===================================================================
 %%%XML parsing
-%%%=================
+%%%===================================================================
+
+%% Gets an XML subelement with tag 'Name' from an element 'El'.
 get_sub_element(Name, #xmlElement{} = El) ->
 	#xmlElement{content = Content} = El,
 	case lists:keyfind(Name, #xmlElement.name, Content) of
@@ -174,7 +183,7 @@ get_sub_element(Name, #xmlElement{} = El) ->
 			Tuple
 	end.
 	
-
+%% Gets value of the 'Name' attribute of element 'El'
 get_attr_value(Name, #xmlElement{} = El) ->
 	#xmlElement{attributes = Attrs} = El,
 	case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
@@ -184,9 +193,15 @@ get_attr_value(Name, #xmlElement{} = El) ->
 			At#xmlAttribute.value
 	end.
 	
+%% Generates an XML element using 'El'
 msg(El) ->
 	    lists:flatten(xmerl:export_simple_content([El], xmerl_xml)).
 
+%% Gets a list of players from an XML element 'List' containing multiple 'Player' tags
+getPlayers(List) ->
+        [E || {xmlElement,player,_,_,_,_,_,_,_,_,_,_} = E <- List].
+
+%% Handling incoming messages.
 handle_xml(E, State) ->
         case get_attr_value(type, E) of
                 "error" ->
@@ -219,8 +234,6 @@ handle_xml(E, State) ->
                                         io:fwrite("Login accepted by server ~p!~n", [State#state.address])
                         end,
                         {ok,State};
-		"beginGame" ->
-			msgInfo(beginGame, State);
                 "gameState" ->
                         msgInfo(gameState, State),
                         "5-in-line-tic-tac-toe" = get_attr_value(id,get_sub_element(gameId, E)),
@@ -263,35 +276,48 @@ handle_xml(E, State) ->
                         {ok, State}
         end.
 
+%%%===============================================================================================
+%%% Message generation
+%%% ==============================================================================================
+
+%% Generates "Thank you" message
 thankYouMsg() ->
 	Msg = {message, [{type, "thank you"}], [{gameId, [{id, "5-in-line-tic-tac-toe"}], []}] },
 	msg(Msg).
 
+%% Generates "leaveGame" message
 leaveGameMsg()->
 	Msg = {message, [{type,"leaveGame"}], [{gameId, [{id, "5-in-line-tic-tac-toe"}], []}]},
 	msg(Msg).
 
+%% Generates "logout" message
 logoutMsg() ->
 	Msg = {message, [{type,"logout"}],[]},
 	msg(Msg).
 
+%% Generates "move" message with a 'tic'
 ticMsg() ->
-	%Msg = {tic,[{x,"1"},{y,"2"}],[]},
 	Msg = {message, [{type,"move"}], [
 				{gameId, [{id,"5-in-line-tic-tac-toe"}],[]},
 				{move,[],[{tic,[{x,"1"},{y,"2"}],[]}]}
 				]},
 	msg(Msg).
 
+%% Generates exemplary "error" message
 errorMsg() ->
 	Msg = {message, [{type, "error"}], ["this is a test error"]},
 	msg(Msg).
 
+%% Generates exemplary "playerLogin" message - used for testing
 playerLoginMsg() ->
 	Msg = {message, [{type, "playerLogin"}], [{playerLogin, [{nick,"pawelMichna"},{gameType,"5-in-line-tic-tac-toe"}], []}]},
 	msg(Msg).
 
 
+
+%%%====================================================
+%%% Functions for testing sending messages to a server
+%%% ===================================================
 testThankYou() ->
 	gen_server:cast(gamer, thankYouMsg()).
 
@@ -311,8 +337,11 @@ testPlayerLogin() ->
 	gen_server:cast(gamer, playerLoginMsg()).
 
 
-getPlayers(List) ->
-        [E || {xmlElement,player,_,_,_,_,_,_,_,_,_,_} = E <- List].
 
+%%%===============================================================
+%%% Helper functions
+%%%===============================================================
+
+%% Displays information what message was received and from whom.
 msgInfo(Msg,State) ->
         io:fwrite("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
