@@ -90,16 +90,17 @@ handle_info({tcp, _Socket, DataBin}, State) ->
     Data = State#state.buffer++Data0,
     try xmerl_scan:string(Data) of
 	{Element, Tail} ->
-	    case handle_xml(Element, State) of
+	    try handle_xml(Element, State) of
 		{ok, State1} ->
 		    {noreply, rec(State1#state{buffer = Tail})};
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
-		    {noreply, rec(State1#state{buffer = Tail})};
-		{stop, Reason, State = #state{}} ->
+		    {noreply, rec(State1#state{buffer = Tail})}
+	    catch 
+		error:{stop, Reason, State = #state{}} ->
 		    gen_tcp:close(State#state.socket),
 		    {stop, Reason, State};
-		{stop, Reason, Msg} ->
+		error:{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
 		    {stop, Reason, State}
@@ -134,10 +135,22 @@ icl(Msg) ->
     {stop, incomplete_xml, sxml:error(Msg)}.
 
 gav(Name, El) ->
-    sxml:get_attr_value(Name, El).
+    case sxml:get_attr_value(Name, El) of
+	false ->
+	    Msg = io_lib:fwrite("~p attribute missing", [Name]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)});
+	AttrValue -> 
+	    AttrValue
+    end.
 
 gse(Name, El) ->
-    sxml:get_sub_element(Name, El).
+    case sxml:get_sub_element(Name, El) of
+	false ->
+	    Msg = io_lib:fwrite("~p subelement missing", [Name]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)});
+	Element -> 
+	    Element
+    end.
 
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
@@ -163,56 +176,26 @@ handle_xml(E, State) ->
 	    {ok, State, sxml:pong()};
 	"playerLogin" ->
 	    E1 = gse(playerLogin, E),
-	    case {gav(nick, E1), gav(gameType, E1)} of
-		{false, _} ->
-		    icl("nick attribute missing");
-		{_, false} ->
-		    icl("gameType attribute missing");
-		{Nick, GameType} ->
-		    ?D("msg type ~p, nick ~p, gametype ~p", [Type, Nick, GameType]),
-		    login(Nick, GameType, State)
-	    end;
+	    Nick = gav(nick, E1), 
+	    GameType = gav(gameType, E1),
+	    ?D("msg type ~p, nick ~p, gametype ~p", [Type, Nick, GameType]),
+	    login(Nick, GameType, State);
 	"move" ->
-	    case {gse(gameId, E), gse(move, E)} of
-		{false, _} ->
-		    icl("gameId subelement missing");
-		{_, false} ->
-		    icl("move subelement missing");
-		{E1, _E2} ->
-		    case gav(id, E1) of
-			false ->
-			    icl("id attribute missing");
-			_TheId ->
-			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
-			    {ok, State}
-		    end
-	    end;
+	    E1 = gse(gameId, E), 
+	    E2 = gse(move, E),
+	    TheId = gav(id, E1),
+	    ?D("msg type: ~p, id: ~p", [Type, TheId]),
+	    {ok, State};
 	"leaveGame" ->
-	    case gse(gameId, E) of
-		false ->
-		    icl("gameId subelement missing");
-		E1 ->
-		    case gav(id, E1) of
-			false ->
-			    icl("id attribute missing");
-			_TheId ->
-			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
-			    {ok, State}
-		    end
-	    end;
+	    E1 = gse(gameId, E),
+	    TheId = gav(id, E1),
+	    ?D("msg type: ~p, id: ~p", [Type, TheId]),
+	    {ok, State};
 	"thank you" ->
-	    case gse(gameId, E) of
-		false -> 
-		    icl("gameId subelement missing");
-		E1 ->
-		    case gav(id, E1) of
-			false ->
-			    icl("id attribute missing");
-			_TheId ->
-			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
-			    {ok, State}
-		    end
-	    end;
+	    E1 = gse(gameId, E),
+	    TheId = gav(id, E1),
+	    ?D("msg type: ~p, id: ~p", [Type, TheId]),
+	    {ok, State};
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
 	    ?D(ErrMsg, []),
