@@ -17,16 +17,16 @@
 -export([testThankYou/0,
 	 testLeaveGame/0,
 	 testLogout/0,
-	 testTic/0,
-	 testError/0,
+	 %testError/0,
 	 testPlayerLogin/0]).
 
 -record(state, {address,
                 port,
-                positions=[],
+                positions,
                 buffer = [],
 		socket,
-                gameId = "5-in-line-tic-tac-toe"
+                gameId = "5-in-line-tic-tac-toe",
+                nick
                }).
 
 -include_lib("xmerl/include/xmerl.hrl").
@@ -65,7 +65,8 @@ init([Address, Port, Nick]) ->
 	io:fwrite("Connecting...~n",[]),
         String = io_lib:fwrite("<message type=\"playerLogin\"><playerLogin nick=\"~s\" gameType=\"5-in-line-tic-tac-toe\"/></message>", [Nick]),
         gen_tcp:send(Socket, String),
-        {ok, #state{address=Address, port=Port, socket=Socket, gameId="5-in-line-tic-tac-toe"}}.
+        crypto:start(),
+        {ok, #state{address=Address, port=Port, socket=Socket, nick=Nick, positions=ets:new(positions, [])}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -210,7 +211,7 @@ handle_xml(E, State) ->
                         #xmlElement{content=Content}  = E,
                         [#xmlText{value=Error}] = Content,
                         io:fwrite("Received error: ~p~n",[Error]),
-                        {ok, State};
+                        {stop, Error, errorMsg(State#state.nick)};
                 "loginResponse" ->
                         msgInfo(loginResponse, State),
                         E1 = get_sub_element(response, E),
@@ -245,26 +246,24 @@ handle_xml(E, State) ->
                                         #xmlElement{content=Content} = E3,
                                         Players = getPlayers(Content),
                                         Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(result, Elem)}|Result] end, [],Players),
-                                        lists:foreach(fun({Nick,Result}) -> io:fwrite("Player ~p is a ~p.~n",[Nick,Result]) end, Players1);
+                                        lists:foreach(fun({Nick,Result}) -> io:fwrite("Player ~p is a ~p.~n",[Nick,Result]) end, Players1),
+                                        {ok,State, thankYouMsg()};
 
                                 true ->
                                         Nick = get_attr_value(nick, E2),
-                                        io:fwrite("Next player to move: ~p~n", [Nick])
-                        end,
-                        E4 = get_sub_element(gameState, E),
-                        E5 = get_sub_element(tic, E4),
-                        if E5 == false ->
-                                        E6 = get_sub_element(tac,E4),
-                                        X = get_attr_value(x, E6),
-                                        Y = get_attr_value(y, E6),
-                                        io:fwrite("Last move: tac, x=~p, y=~p~n",[X,Y]);
-                                true ->
-                                        X = get_attr_value(x,E5),
+                                        io:fwrite("Next player to move: ~p~n", [Nick]),
+                                        E4 = get_sub_element(gameState, E),
+                                        E5 = get_sub_element(tac, E4),
+                                        X = get_attr_value(x, E5),
                                         Y = get_attr_value(y, E5),
-                                        io:fwrite("Last move: tic, x=~p, y=~p~n",[X,Y])
-                        end,
+                                        io:fwrite("Last move: tac, x=~p, y=~p~n",[X,Y]),
+                                        if Nick == State#state.nick ->
+                                                        ets:insert_new(State#state.positions, {{X,Y},tac}),
+                                                        Move = make_move(State#state.positions),
+                                                        {ok, State, ticMsg(Move)}
 
-			{ok, State, thankYouMsg()};
+                                        end
+                        end;
                 "serverShutdown" ->
                         msgInfo(serverShutdown,State),
                         {ok, State};
@@ -297,16 +296,17 @@ logoutMsg() ->
 	msg(Msg).
 
 %% Generates "move" message with a 'tic'
-ticMsg() ->
+ticMsg({X,Y}) ->
 	Msg = {message, [{type,"move"}], [
 				{gameId, [{id,"5-in-line-tic-tac-toe"}],[]},
-				{move,[],[{tic,[{x,"1"},{y,"2"}],[]}]}
+				{move,[],[{tic,[{x,X},{y,Y}],[]}]}
 				]},
 	msg(Msg).
 
 %% Generates exemplary "error" message
-errorMsg() ->
-	Msg = {message, [{type, "error"}], ["this is a test error"]},
+errorMsg(Nick) ->
+        Error = io_lib:fwrite("Player ~p received error.", Nick),
+	Msg = {message, [{type, "error"}], [Error]},
 	msg(Msg).
 
 %% Generates exemplary "playerLogin" message - used for testing
@@ -328,14 +328,14 @@ testLeaveGame() ->
 testLogout() ->
 	gen_server:cast(gamer, logoutMsg()).
 
-testTic() ->
-	gen_server:cast(gamer, ticMsg()).
+%testTic() ->
+%	gen_server:cast(gamer, ticMsg()).
 
-testError() ->
-	gen_server:cast(gamer, errorMsg()).
+%testError() ->
+%	gen_server:cast(gamer, errorMsg()).
 
 testPlayerLogin() ->
-	gen_server:cast(gamer, playerLoginMsg()).
+        gen_server:cast(gamer, playerLoginMsg()).
 
 
 
@@ -346,3 +346,14 @@ testPlayerLogin() ->
 %% Displays information what message was received and from whom.
 msgInfo(Msg,State) ->
         io:fwrite("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
+
+make_move(Positions) ->
+        X = crypto:rand_uniform(0,21),
+        Y = crypto:rand_uniform(0,21),
+        Found = ets:lookup(Positions, {X,Y}),
+        if Found == [] ->
+                        ets:insert_new({Positions, {X,Y},tic}),
+                        {X,Y};
+                true ->
+                        make_move(Positions)
+        end.
