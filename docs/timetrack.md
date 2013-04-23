@@ -5,3 +5,4 @@
 2013-03-18 18:00 23:30 PP - releases
 2013-03-18 18:00 23:30 PP - releases
 2013-03-19 11:00 13:00 PP - releases
+2013-04-23 09:00 13:00 PM - basic AI, normal game
