@@ -12,7 +12,9 @@
 -module(sxml).
 
 %% helpers
--export([msg/1, get_sub_element/2, get_attr_value/2]).
+-export([msg/1, get_sub_element/2, get_sub_elements/2, get_attr_value/2, 
+	 gse/2, gsen/3, gav/2
+	]).
 
 %% protocol client
 -export([login_response/0, login_response/1]).
@@ -31,27 +33,85 @@
 %%% XML parsing helpers
 %%%===================================================================
 
+get_sub_elements(Name, #xmlElement{} = El) ->
+    #xmlElement{content = Content} = El,
+    Fun = fun(#xmlElement{name = AName}) when AName =:= Name -> true;
+	     (_) -> false
+	  end,
+    lists:filter(Fun, Content).
+
 get_sub_element(Name, #xmlElement{} = El) ->
     #xmlElement{content = Content} = El,
-    R = case lists:keyfind(Name, #xmlElement.name, Content) of
+    case lists:keyfind(Name, #xmlElement.name, Content) of
 	false ->
 	    false;
 	At ->
 	    At
-    end,
-    %% ?D("gse. get ~p with result ~p from ~p", [Name, R, El]),
-    R.
+    end.
 
 get_attr_value(Name, #xmlElement{} = El) ->
     #xmlElement{attributes = Attrs} = El,
-    R = case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
+    case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
 	false ->
 	    false;
 	At ->
 	    At#xmlAttribute.value
-    end,
-    %% ?D("gav. get ~p with result ~p from ~p", [Name, R, El]),
-    R.
+    end.
+
+%% throwing to simplify document parsing
+gav(Tuple, El) when is_tuple(Tuple) ->
+    L = tuple_to_list(Tuple),
+    L1 = [ get_attr_value(Name, El) || Name <- L ],
+    case lists:any(fun(X) -> X =/= false end, L1) of
+	true ->
+	    list_to_tuple(L1);
+	false ->
+	    Tmpl = "provide at least of the following attributes: ~p",
+	    Msg = io_lib:fwrite(Tmpl, [L]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)})
+    end;
+gav(Name, El) ->
+    case get_attr_value(Name, El) of
+	false ->
+	    Msg = io_lib:fwrite("~p attribute missing", [Name]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)});
+	AttrValue -> 
+	    AttrValue
+    end.
+
+%% throwing to simplify document parsing
+gse(Tuple, El) when is_tuple(Tuple) ->
+    L = tuple_to_list(Tuple),
+    L1 = [ get_sub_element(Name, El) || Name <- L ],
+    case lists:any(fun(X) -> X =/= false end, L1) of
+	true ->
+	    list_to_tuple(L1);
+	false ->
+	    MsgTemplate = "provide at least of the following subelements: ~p",
+	    Msg = io_lib:fwrite(MsgTemplate, [L]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)})
+    end;
+gse(Name, El) ->
+    case sxml:get_sub_element(Name, El) of
+	false ->
+	    Msg = io_lib:fwrite("~p subelement missing", [Name]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)});
+	Element -> 
+	    Element
+    end.
+
+gsen(Name, #xmlElement{} = El, N) ->
+    L = get_sub_elements(Name, El),
+    case length(L) of
+	N ->
+	    L;
+	_ ->
+	    Msg = io:fwrite("please provide exactly ~p tags ~p", [Name]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)})
+    end.
+    
+    
+
 %%%===================================================================
 %%% messages construction
 %%%===================================================================

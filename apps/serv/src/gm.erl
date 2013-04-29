@@ -27,6 +27,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-import(sxml, [gse/2, gav/2]).
+
 -define(SERVER, ?MODULE). 
 -define(s, State#state).
 
@@ -113,12 +115,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-gav(Name, El) ->
-    sxml:get_attr_value(Name, El).
-
-gse(Name, El) ->
-    sxml:get_sub_element(Name, El).
-
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
     State.
@@ -140,102 +136,51 @@ handle_xml(E, State) ->
 	    {stop, received_error, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
-	"beginGame" ->
-	    case {gse(gameId, E), gse(player, E)} of
-		{false, _} ->
-		    icl("gameId subelement missing");
-		{_, false} ->
-		    icl("player subelement missing");
-		{E1, E2} ->
-		    case {gav(id, E1),gav(nick, E2)} of
-			{false, _} ->
-			    icl("id attribute missing");
-			{_, false} ->
-			    icl("nick attribute missing");
-			{Id, Nick} ->
-			    ?D("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
-			    {ok, State}
-		    end
-	    end;
 	"move" ->
-	    case {gse(gameId, E), gse(move, E)} of
-		{false, _} ->
-		    icl("gameId subelement missing");
-		{_, false} ->
-		    icl("move subelement missing");
-		{E1, _E2} ->
-		    case gav(id, E1) of
-			false ->
-			    icl("id attribute missing");
-			_TheId ->
-			    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
-			    {ok, State}
-		    end
-	    end;
+	    E1 = gse(gameId, E), 
+	    _E2 = gse(move, E),
+	    _TheId = gav(id, E1),
+	    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
+	    {ok, State};
 	"playerLeftGame" ->
-	    case {gse(player, E), gse(gameId, E)} of
-		{false, _} ->
-		    icl("player subelement missing");
-		{_, false} ->
-		    icl("gameId subelement missing");
-		{E1, E2} ->
-		    case {gav(nick, E1),gav(id, E2)} of
-			{false, _} ->
-			    icl("nick attribute missing");
-			{_, false} ->
-			    icl("id attribute missing");
-			{Nick, Id} ->
-			    ?D("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
-			    {ok, State}
-		    end
-	    end;
+	    E1 = gse(player, E), 
+	    E2 = gse(gameId, E),
+	    Nick = gav(nick, E1), 
+	    Id = gav(id, E2),
+	    ?D("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
+	    {ok, State};
 	"serverShutdown" ->
 	    ?D("msg type: ~p", [Type]),
 	    {ok, State};
 	"gameState" ->
-	    case gse(gameId, E) of
-		false ->
-		    icl("gameId subelement missing");
-		GameId ->
-		    case {gse(nextPlayer, E), gse(gameOver, E)} of
-			{false, false} ->
-			    icl("please provide nextPlayer OR gameOver subelement");
-			{E1, false} ->
-			    case gav(nick, E1) of
-				false ->
-				    icl("nick attribute missing");
-				Nick ->
-				    ?D("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
-				    {ok, State}
-			    end;
-			{false, E2} ->
-			    case {gav(nick, E2),gav(result, E2)}  of
-				{false, _} ->
-				    icl("nick attribute missing");
-				{_, false} ->
-				    icl("result attribute missing");
-				{_, Res} when Res /= "winner", Res /= "loser" ->
-				    icl("result attribute: allowed values are loser or winner");
-				{Nick, Res} ->
-				    ?D("msg type: ~p/gameOver, gameId: ~p, nick: ~p, result", [Type, GameId, Nick, Res]),
-				    {ok, State}
-			    end
+	    GameId = gse(gameId, E),
+	    case gse({nextPlayer, gameOver}, E) of
+		{E1, false} ->
+		    case gav(nick, E1) of
+			false ->
+			    icl("nick attribute missing");
+			Nick ->
+			    ?D("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
+			    {ok, State}
+		    end;
+		{_, E2} ->
+		    Nick = gav(nick, E2), 
+		    Res = gav(result, E2),
+		    case Res of
+			Res when Res /= "winner", Res /= "loser" ->
+			    icl("result attribute: allowed values are loser or winner");
+			Res ->
+			    ?D("msg type: ~p/gameOver, gameId: ~p, nick: ~p, result", [Type, GameId, Nick, Res]),
+			    {ok, State}
 		    end
 	    end;
 	"gameMasterLogin" ->
 	    E1 = gse(gameMasterLogin, E),
-	    case {gav(id, E1), gav(gameType, E1), gav(playersMin, E1), gav(playersMax, E1)} of
-		{false, _, _, _} ->
-		    {stop, incomplete_xml, sxml:error("id attribute missing")};
-		{_, false, _, _} ->
-		    {stop, incomplete_xml, sxml:error("gameType attribute missing")};
-		{_, _, false, _} ->
-		    {stop, incomplete_xml, sxml:error("playersMin attribute missing")};
-		{_, _, _, false} ->
-		    {stop, incomplete_xml, sxml:error("playersMax attribute missing")};
-		{Nick, GameType, PlayersMin, PlayersMax} ->
-		    login(Nick, GameType, PlayersMin, PlayersMax, State)
-	    end;
+	    Nick = gav(id, E1), 
+	    GameType = gav(gameType, E1), 
+	    PlayersMin = gav(playersMin, E1), 
+	    PlayersMax = gav(playersMax, E1),
+	    login(Nick, GameType, PlayersMin, PlayersMax, State);
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
 	    ?D(ErrMsg, []),
@@ -248,19 +193,14 @@ handle_xml(E, State) ->
 %%%===================================================================
 
 login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = undefined}) ->
-    %% try gproc:add_local_name({game_master, GameType}) of
-    %% 	true ->
-    %% gproc:add_local_property({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
-    %% gproc:add_local_property({gm}, {GameType}),
-    {ok, ?s{state = registered}, sxml:login_response()};
-%% login() ->
-
-    %% catch 
-    %% 	_:_ ->
-    %% 	    {stop, wrong_id, sxml:gm_login_response(gm_already_registered)}
-    %% end;
+    case gp:reg(n, {gm, GameType}) of
+	true ->
+	    gp:alp({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
+	    {ok, ?s{state = registered}, sxml:login_response()};
+	false ->
+    	    {stop, already_registered, sxml:login_response(gm_already_registered)}
+    end;
 login(_, OtherGame, _, _, #state{state = undefined}) ->
-    ?ERROR("logging with improper game type: ~p", [OtherGame]),
     {stop, improper_game_type, sxml:login_response(improper_game_type)};
 login(_, _, _, _, _) ->
     {stop, already_registered, sxml:login_response(already_registered)}.
