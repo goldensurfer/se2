@@ -23,6 +23,8 @@
 
 -export([t/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
+-import(sxml, [gse/2, gav/2]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
@@ -133,24 +135,6 @@ msg(Msg) ->
 
 icl(Msg) ->
     {stop, incomplete_xml, sxml:error(Msg)}.
-
-gav(Name, El) ->
-    case sxml:get_attr_value(Name, El) of
-	false ->
-	    Msg = io_lib:fwrite("~p attribute missing", [Name]),
-	    erlang:error({stop, incomplete_xml, sxml:error(Msg)});
-	AttrValue -> 
-	    AttrValue
-    end.
-
-gse(Name, El) ->
-    case sxml:get_sub_element(Name, El) of
-	false ->
-	    Msg = io_lib:fwrite("~p subelement missing", [Name]),
-	    erlang:error({stop, incomplete_xml, sxml:error(Msg)});
-	Element -> 
-	    Element
-    end.
 
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),

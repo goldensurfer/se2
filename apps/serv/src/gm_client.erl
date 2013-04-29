@@ -28,6 +28,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-import(sxml, [gse/2, gav/2]).
+
 -define(SERVER, ?MODULE). 
 
 -record(state, {
@@ -131,6 +133,12 @@ handle_xml(E, State) ->
     case gav(type, E) of
 	"ping" ->
 	    {ok, State, sxml:pong()};
+	"beginGame" ->
+	    E1 = gse(gameId, E),
+	    Id = gav(id, E1),
+	    Players = sxml:get_sub_elements(player, E),
+	    Nicks = [ gav(nick, E2) || E2 <- Players ],
+	    begin_game(Id, Nicks, State);
 	"loginResponse" ->
 	    E1 = gse(response, E),
 	    case gav(accept, E1) of
@@ -143,6 +151,8 @@ handle_xml(E, State) ->
 		    ErrId = gav(accept, E2),
 		    {stop, {login_rejected_by_server, ErrId}}
 	    end;
+	%% "move" ->
+	    
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
 	    ?D(ErrMsg, []),
@@ -150,14 +160,33 @@ handle_xml(E, State) ->
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.
 
+%%%===================================================================
+%%% Commands
+%%%===================================================================
+begin_game(GameId, Players, State) ->
+    Self = self(),
+    case ttt:check_conditions(Players) of
+	true ->
+	    Key = {n, l, {game, GameId}},
+	    case gproc:reg_or_locate(Key) of
+		{Self, _} ->
+		    {ok, GamePid} = games_sup:add_child(GameId, Players),
+		    Self = gproc:give_away(Key, GamePid),
+		    {ok, State};
+		_ ->
+		    Msg = io_lib:fwrite("Game with id ~p already exists!", [GameId]),
+		    {stop, game_already_exists, sxml:error(Msg)}
+	    end;
+	false ->
+	    Msg = io_lib:fwrite("wrong number of players: ~p", [length(Players)]),
+	    {stop, game_conditions_unsatisfied, sxml:error(Msg)}
+    end.
+
+%%%===================================================================
+%%% Commands
+%%%===================================================================
 finish_login(State) ->
     {ok, State}.
-
-gav(Name, El) ->
-    sxml:get_attr_value(Name, El).
-
-gse(Name, El) ->
-    sxml:get_sub_element(Name, El).
 
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
