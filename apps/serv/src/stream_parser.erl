@@ -30,7 +30,7 @@ loop(Socket, Transport, State, Tail0) ->
 
 sax_event0(Event, State) ->
     State1 = sax_event(Event, State),
-    ?DBG("~p: ~p -> ~p", [Event, State, State1]),
+    ?INFO("~p: ~p -> ~p", [Event, State, State1]),
     State1.
 
 sax_event(startDocument, start) ->

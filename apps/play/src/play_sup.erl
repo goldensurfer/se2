@@ -1,14 +1,5 @@
-%%%-------------------------------------------------------------------
-%%% @author 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
-%%% @copyright (C) 2013, 190033 peregud pavel
-%%% @doc
-%%%
-%%% Root supervisor for serv application.
-%%%
-%%% @end
-%%% Created :  5 Mar 2013 by 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
-%%%-------------------------------------------------------------------
--module(serv_sup).
+
+-module(play_sup).
 
 -behaviour(supervisor).
 
@@ -33,7 +24,6 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    RoomSup = ?CHILD(room_sup, supervisor),
-    Host = ?CHILD(game_host, worker),
-    {ok, { {one_for_one, 5, 10}, [RoomSup, Host]} }.
+    Player = ?CHILD(gamer, worker),
+    {ok, { {one_for_one, 1, 1}, [Player]} }.
 
