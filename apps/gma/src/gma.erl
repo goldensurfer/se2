@@ -1,33 +1,37 @@
 %%%-------------------------------------------------------------------
-%%% @author 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
-%%% @copyright (C) 2013, 190033 peregud pavel
+%%% @author Paul Peregud <>
+%%% @copyright (C) 2013, Paul Peregud
 %%% @doc
 %%%
-%%% Provides API for serv application.
-%%%
 %%% @end
-%%% Created :  5 Mar 2013 by 190033 peregud pavel <peregudp@p20311.mini.pw.edu.pl>
+%%% Created : 30 Apr 2013 by Paul Peregud <>
 %%%-------------------------------------------------------------------
--module(serv).
+-module(gma).
 
 %% API
--export([start/0, stop/0]).
+-include_lib("serv/include/se2.hrl").
 
-%%%===================================================================
-%%% API
-%%%===================================================================
+-export([start_all/3, start_all/4, start/0]).
 
-start() ->
-    ok = ensure(ranch, permanent),
+start_all(Host, Port, Id) ->
+    start_all(Host, Port, Id, ?MAGIC).
+
+start_all(Host, Port, Id, Game) ->
     ok = ensure(gproc, permanent),
     ok = ensure(inets, permanent),
     ok = ensure(lager, permanent),
-    ok = application:start(serv, permanent).
+    ok = application:start(gma, permanent),
+    gm_client:start_link(Host, Port, Id, Game).
+
+start() ->
+    ok = ensure(gproc, permanent),
+    ok = ensure(inets, permanent),
+    ok = ensure(lager, permanent),
+    ok = application:start(gma, permanent).
 
 stop() ->
+    application:stop(gma),
     application:stop(serv),
-    application:stop(lager),
-    application:stop(ranch),
     application:stop(lager),
     application:stop(gproc).
 

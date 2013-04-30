@@ -11,7 +11,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, add_child/3]).
+-export([start_link/0, add_child/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -26,8 +26,8 @@ start_link() ->
     {M, F, A} = {ttt, start_link, []},
     supervisor:start_link({local, ?MODULE}, ?MODULE, [{M, F, A}]).
 
-add_child(Cl, GameId, Players) ->
-    supervisor:start_child(?MODULE, [Cl, GameId, Players]).
+add_child(GameId, Players) ->
+    supervisor:start_child(?MODULE, [GameId, Players]).
 
 %% ===================================================================
 %% Supervisor callbacks

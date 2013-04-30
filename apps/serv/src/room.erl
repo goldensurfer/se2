@@ -64,6 +64,8 @@ handle_call({join, {Pid, Nick}}, From,
 	    ?INFO("starting game!", []),
 	    [ gen_server:reply(Client, true) || Client <- Captured ],
 	    timer:cancel(?s.timer),
+	    Nicks = [ Nick || {_, Nick} <- Players ],
+	    gm:begin_game(?s.gm, ?s.id, Nicks),
 	    {noreply, State#state{playing = true, captured = [], 
 				  target = [], players = Players}};
 	_ ->

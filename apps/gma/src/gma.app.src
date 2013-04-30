@@ -1,4 +1,4 @@
-{application, serv,
+{application, gma,
  [
   {description, ""},
   {vsn, "0.0.1"},
@@ -6,13 +6,9 @@
   {applications, [
                   kernel,
                   stdlib,
-                  ranch,
                   gproc,
                   lager
                  ]},
-  {mod, { serv_app, []}},
-  {env, [
-	 {client_port, 1090},
-	 {gm_port, 1091}
-  ]}
+  {mod, { gma_app, []}},
+  {env, []}
  ]}.

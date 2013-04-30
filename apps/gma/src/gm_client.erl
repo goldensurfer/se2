@@ -57,6 +57,9 @@ start_link(Host, Port, Id) ->
 start_link(Host, Port, Id, Game) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Host, Port, Id, Game], []).
 
+next_player(GameId, Next) ->
+    gen_server:call(?SERVER, {next_player, GameId, Next}).
+
 sendGS() ->
     GI = {gameId, [{id, "123"}], []},
     NP = {nextPlayer, [{nick, "TestPlayer"}], []},
@@ -75,6 +78,12 @@ init([Host, Port, Id, Game]) ->
     gen_tcp:send(Socket, sxml:gm_login(Id, Game)),
     {ok, #state{socket = Socket}}.
 
+handle_call({next_player, Id, Player}, _From, State) ->
+    GameId = {gameId, [{id, Id}], []},
+    NextPlayer = {nextPlayer, [{nick, Player}], []},
+    Msg = {message, [{type, gameState}], [GameId, NextPlayer]},
+    gen_tcp:send(?s.socket, sxml:msg(Msg)),
+    {ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -169,8 +178,8 @@ begin_game(GameId, Players, State) ->
 	    Key = {n, l, {game, GameId}},
 	    case gproc:reg_or_locate(Key) of
 		{Self, _} ->
-		    {ok, GamePid} = games_sup:add_child(GameId, Players),
-		    Self = gproc:give_away(Key, GamePid),
+		    {ok, GamePid} = games_sup:add_child(?SERVER, GameId, Players),
+		    gproc:give_away(Key, GamePid),
 		    {ok, State};
 		_ ->
 		    Msg = io_lib:fwrite("Game with id ~p already exists!", [GameId]),
@@ -182,7 +191,7 @@ begin_game(GameId, Players, State) ->
     end.
 
 %%%===================================================================
-%%% Commands
+%%% Helpers
 %%%===================================================================
 finish_login(State) ->
     {ok, State}.
@@ -190,3 +199,5 @@ finish_login(State) ->
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
     State.
+
+    

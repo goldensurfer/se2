@@ -13,7 +13,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, check_conditions/1]).
+-export([start_link/3, check_conditions/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -24,6 +24,7 @@
 -type who() ::  xs | os.
 
 -record(state, {
+	  cl :: pid(),
 	  id :: binary(),
 	  players :: [binary()],
 	  board = ets:new(board_state, []) :: ets:tid(),
@@ -37,8 +38,8 @@
 %%% API
 %%%===================================================================
 
-start_link(GameId, Players) ->
-    gen_server:start_link(?MODULE, [GameId, Players], []).
+start_link(Cl, GameId, Players) ->
+    gen_server:start_link(?MODULE, [Cl, GameId, Players], []).
 
 check_conditions([A, A]) ->
     false;
@@ -51,11 +52,12 @@ check_conditions(_) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([GameId, Players]) ->
-    {ok, #state{id = GameId, players = Players}}.
+init([Cl, GameId, Nicks]) ->
+    self() ! do_begin,
+    Players = lists:zip([xs, os], Nicks),
+    {ok, #state{cl = Cl, id = GameId, players = Players}}.
 
 handle_call({move, Who, X, Y} = Move, _From, State = #state{next = Who}) ->
-  %% when AWho =:= Who ->
     case check_range(X, Y, ?s.range) of
 	ok ->
 	    case ets:insert_new(?s.board, {{X, Y}, Who}) of
@@ -80,6 +82,9 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
+handle_info(do_begin, State) ->
+    gm_client:next_player(?s.id, player(?s.next, State)),
+    {noreply, State};
 handle_info(_Info, State) ->
     {stop, {odd_info, _Info}, State}.
 

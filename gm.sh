@@ -13,8 +13,8 @@ fi
 
 if [ -z "$4" ] ; then
     echo "start 3"
-    erl $OPTS_COMMON -eval "gm_client:start_link(\"$1\", $2, $3)."
+    erl $OPTS_COMMON -eval "gma:start_all(\"$1\", $2, $3)."
 else
     echo "start 4"
-    erl $OPTS_COMMON -eval "gm_client:start_link(\"$1\", $2, $3, \"$4\")."
+    erl $OPTS_COMMON -eval "gma:start_all(\"$1\", $2, $3, \"$4\")."
 fi

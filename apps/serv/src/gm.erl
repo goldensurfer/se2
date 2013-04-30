@@ -19,7 +19,7 @@
 -compile(export_all).
 
 %% API
--export([start_link/4]).
+-export([start_link/4, begin_game/3]).
 
 -export([t/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
@@ -55,6 +55,9 @@
 start_link(ListenerPid, Socket, Transport, Opts) ->
     gen_server:start_link(?MODULE, [ListenerPid, Socket, Transport, Opts], []).
 
+begin_game(Pid, Id, Nicks) ->
+    gen_server:cast(Pid, {begin_game, self(), Id, Nicks}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -69,6 +72,12 @@ init([ListenerPid, Socket, Transport, _Opts = []]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
+handle_cast({begin_game, RoomPid, Id, Nicks}, State = #state{state = registered}) ->
+    GameId = {gameId, [{id, Id}], []},
+    Players = [ {player, [{nick, Nick}], []} || Nick <- Nicks ],
+    Msg = {message, [{type,beginGame}], [GameId | Players]},
+    gen_tcp:send(?s.socket, sxml:msg(Msg)),
+    {noreply, State#state{state = playing}};
 handle_cast(Msg, State) ->
     {stop, {odd_cast, Msg}, State}.
 
