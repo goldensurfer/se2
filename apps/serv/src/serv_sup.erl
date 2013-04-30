@@ -33,5 +33,7 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {one_for_one, 5, 10}, []} }.
+    RoomSup = ?CHILD(room_sup, supervisor),
+    Host = ?CHILD(game_host, worker),
+    {ok, { {one_for_one, 5, 10}, [RoomSup, Host]} }.
 

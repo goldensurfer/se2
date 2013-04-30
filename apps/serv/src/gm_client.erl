@@ -141,18 +141,17 @@ handle_xml(E, State) ->
 	    begin_game(Id, Nicks, State);
 	"loginResponse" ->
 	    E1 = gse(response, E),
-	    case gav(accept, E1) of
-		false ->
-		    {stop, incomplete_xml, sxml:error("accept attribute missing")};
+	    Accept = gav(accept, E1),
+	    case Accept of
 		"yes" ->
 		    finish_login(State);
 		"no" ->
 		    E2 = gse(error, E),
-		    ErrId = gav(accept, E2),
+		    ErrId = gav(id, E2),
 		    {stop, {login_rejected_by_server, ErrId}}
 	    end;
-	%% "move" ->
-	    
+	"move" ->
+	    error(not_impl);
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
 	    ?D(ErrMsg, []),
