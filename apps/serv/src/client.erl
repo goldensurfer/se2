@@ -33,6 +33,7 @@
 -define(s, State#state).
 
 -record(state, {
+	  nick :: any(),
 	  socket,
 	  transport,
 	  buffer = [],
@@ -53,6 +54,9 @@
 
 start_link(ListenerPid, Socket, Transport, Opts) ->
     gen_server:start_link(?MODULE, [ListenerPid, Socket, Transport, Opts], []).
+
+join_game(Pid, GameType, GamePid, GameId) ->
+    gen_server:cast(Pid, {join_game, GameType, GamePid, GameId}).
 
 sendLR() ->
     R = {response, [{accept, "yes"}], []},
@@ -80,6 +84,16 @@ init([ListenerPid, Socket, Transport, _Opts = []]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
+handle_cast({join_game, GameType, GamePid, GameId}, State) ->
+    gproc:munreg(p, l, [{registered_for_game, GameType}, {registered}]),
+    case room:join(GamePid, ?s.nick) of
+	true ->
+	    {noreply, State#state{pl_state = playing}};
+	{error, _} ->
+	    gproc:reg(p, l, [{{registered_for_game, GameType}, ?s.nick}, 
+			     {{registered}, GameType}]),
+	    {noreply, State}
+    end;
 handle_cast(Msg, State) ->
     gen_tcp:send(State#state.socket, Msg),
     {noreply, State}.
@@ -194,9 +208,10 @@ handle_xml(E, State) ->
 login(Nick, GameType, State = #state{pl_state = undefined}) ->
     try gproc:add_local_name({player, Nick}) of
 	true ->
-	    %% gproc:add_local_property({registered_for_game, GameType}, Nick),
-	    %% gproc:add_local_property({registered}, GameType),
-	    {ok, ?s{pl_state = registered}, sxml:login_response()}
+	    gproc:add_local_property({registered_for_game, GameType}, Nick),
+	    gproc:add_local_property({registered}, GameType),
+	    game_host:check_game(GameType),
+	    {ok, ?s{nick = Nick, pl_state = registered}, sxml:login_response()}
     catch 
 	_:_ ->
 	    {stop, wrong_nick, sxml:login_response(wrong_nick)}

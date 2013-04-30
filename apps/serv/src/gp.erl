@@ -16,7 +16,7 @@
 %%%===================================================================
 
 reg(T, K, V) ->
-    try gproc:reg(T, l, {K, V}) of
+    try gproc:reg({T, l, {K, V}}) of
 	true ->
 	    true
     catch 

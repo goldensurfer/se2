@@ -21,6 +21,8 @@
 
 -define(SERVER, ?MODULE). 
 
+-include_lib("serv/include/logging.hrl").
+
 -record(state, {}).
 
 %%%===================================================================
@@ -43,11 +45,15 @@ init([]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({check, Game}, State) ->
-    case gproc:lookup_local_property({registered_for_game, Game}) of
-	[_|_] = List when length(List) > 2 ->
-	    create_game(Game, List);
-	[] ->
+handle_cast({check, GameType}, State) ->
+    List = gproc:lookup_local_properties({registered_for_game, GameType}),
+    GM = gproc:lookup_local_properties({gm_for_game, GameType}),
+    ?INFO("checking players and gms:~n~p", [{List, GM}]),
+    case {List, GM} of
+	{[_|_] = List, [{GMPid, {_Id, PlayersMin, _PlayersMax}} | _]} 
+	  when length(List) >= PlayersMin ->
+	    create_game(GMPid, GameType, lists:sublist(List, PlayersMin));
+	_ ->
 	    ok
     end,
     {noreply, State};
@@ -67,5 +73,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-create_game(Game, ListOfPlayers) ->
-    erlang:error(not_impl).
+create_id() ->
+    L = [ crypto:rand_uniform($a, $z) || _ <- lists:seq(1, 8) ],
+    list_to_binary(L).
+
+create_game(GMPid, GameType, ListOfPlayers) ->
+    GameId = create_id(),
+    {ok, GamePid} = room_sup:add_child(GameId, GameType, GMPid, ListOfPlayers),
+    [ client:join_game(Pid, GameType, GamePid, GameId) || 
+	{Pid, _Nick} <- ListOfPlayers ].
+

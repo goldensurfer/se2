@@ -178,8 +178,10 @@ handle_xml(E, State) ->
 	    E1 = gse(gameMasterLogin, E),
 	    Nick = gav(id, E1), 
 	    GameType = gav(gameType, E1), 
-	    PlayersMin = gav(playersMin, E1), 
-	    PlayersMax = gav(playersMax, E1),
+	    PlayersMin0 = gav(playersMin, E1), 
+	    PlayersMax0 = gav(playersMax, E1),
+	    PlayersMin = list_to_integer(PlayersMin0),
+	    PlayersMax = list_to_integer(PlayersMax0),
 	    login(Nick, GameType, PlayersMin, PlayersMax, State);
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
@@ -193,9 +195,9 @@ handle_xml(E, State) ->
 %%%===================================================================
 
 login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = undefined}) ->
-    case gp:reg(n, {gm, GameType}) of
+    case gp:reg(n, {gm, GameType}, true) of
 	true ->
-	    gp:alp({gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}),
+	    gproc:mreg(p, l, [{{gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}}]),
 	    {ok, ?s{state = registered}, sxml:login_response()};
 	false ->
     	    {stop, already_registered, sxml:login_response(gm_already_registered)}
