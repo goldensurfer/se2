@@ -35,5 +35,5 @@ add_child(GameId, GameType, GMPid, Players) ->
 
 init([{M, F, A}]) ->
     {ok,{{simple_one_for_one,10,10},
-         [{undefined, {M, F, A}, transient, 3000, worker, [M]}]
+         [{undefined, {M, F, A}, temporary, 3000, worker, [M]}]
         }}.
