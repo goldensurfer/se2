@@ -20,6 +20,7 @@
 
 %% API
 -export([start_link/3, start_link/4]).
+-export([next_player/2]).
 
 %% test API
 -export([sendGS/0, sendLogin/0]).
