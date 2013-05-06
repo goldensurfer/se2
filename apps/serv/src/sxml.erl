@@ -21,7 +21,7 @@
 -export([error/1]).
 
 %% protocol gm
--export([gm_login/2]).
+-export([begin_game/2]).
 
 %% testing stuff
 -export([ping/0, pong/0]).
@@ -113,7 +113,7 @@ gsen(Name, #xmlElement{} = El, N) ->
     
 
 %%%===================================================================
-%%% messages construction
+%%% misc messages
 %%%===================================================================
 
 error(Msg) ->
@@ -135,7 +135,6 @@ login_response() ->
 login_response_error(Code) ->
     msg({message, [{type,loginResponse}], [{response, [{accept, no}], []}, 
 					   {error, [{id, Code}], []}]}).
-
 login_response(wrong_nick) ->
     login_response_error(1);
 login_response(already_registered) ->
@@ -159,6 +158,11 @@ gm_login(Id, Magic) ->
 	   ], []},
     sxml:msg({message, [{type, gameMasterLogin}], [GML]}).
 
+begin_game(Id, Nicks) ->
+    GameId = {gameId, [{id, Id}], []},
+    Players = [ {player, [{nick, Nick}], []} || Nick <- Nicks ],
+    Msg = {message, [{type,beginGame}], [GameId | Players]},
+    msg(Msg).
 
 %%%===================================================================
 %%% Internal functions
