@@ -84,7 +84,7 @@ handle_call({next_player, Id, Player}, _From, State) ->
     NextPlayer = {nextPlayer, [{nick, Player}], []},
     Msg = {message, [{type, gameState}], [GameId, NextPlayer]},
     gen_tcp:send(?s.socket, sxml:msg(Msg)),
-    {ok, State};
+    {reply, ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
