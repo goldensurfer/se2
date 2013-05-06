@@ -43,8 +43,8 @@
 start_link(GameId, GameType, GMPid, Players) ->
     gen_server:start_link(?MODULE, [GameId, GameType, GMPid, Players], []).
 
-join(GamePid, Nick) ->
-    gen_server:call(GamePid, {join, {self(), Nick}}).
+join(Pid, Nick) ->
+    gen_server:call(Pid, {join, {self(), Nick}}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -68,7 +68,7 @@ handle_call({join, {Pid, Nick}}, From,
 	    ?INFO("starting game!", []),
 	    [ gen_server:reply(Client, true) || Client <- Captured ],
 	    timer:cancel(?s.timer),
-	    Nicks = [ Nick || {_, Nick} <- Players ],
+	    Nicks = [ ANick || {_, ANick} <- Players ],
 	    gm:begin_game(?s.gm, ?s.id, Nicks),
 	    {noreply, State#state{playing = true, captured = [], 
 				  target = [], players = Players}};
