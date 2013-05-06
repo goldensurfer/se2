@@ -29,6 +29,9 @@
                 nick
                }).
 
+-define(DBG(F), io:fwrite(user, "(~p)~p:~p "++F++"~n", [self(), ?MODULE, ?LINE])).
+-define(DBG(F, A), io:fwrite(user, "(~p)~p:~p "++F++"~n", [self(), ?MODULE, ?LINE]++A)).
+
 -include_lib("xmerl/include/xmerl.hrl").
 
 %%%===================================================================
@@ -62,11 +65,12 @@ start_link(Address, Port, Nick) ->
 %%--------------------------------------------------------------------
 init([Address, Port, Nick]) ->
         {ok, Socket} = gen_tcp:connect(Address, Port, [{mode, list}]),
-	io:fwrite("Connecting...~n",[]),
+	?DBG("Connecting...~n",[]),
         String = io_lib:fwrite("<message type=\"playerLogin\"><playerLogin nick=\"~s\" gameType=\"5-in-line-tic-tac-toe\"/></message>", [Nick]),
         gen_tcp:send(Socket, String),
         crypto:start(),
-        {ok, #state{address=Address, port=Port, socket=Socket, nick=Nick, positions=ets:new(positions, [])}}.
+        {ok, #state{address=Address, port=Port, socket=Socket, nick=Nick, 
+		    positions=ets:new(positions, [])}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -114,6 +118,7 @@ handle_cast(Msg, State) ->
 handle_info({tcp, _Socket, DataBin}, State) ->
 	Data0 = DataBin,
 	Data = State#state.buffer++Data0,
+    ?DBG("got tcp packet:~n~p", [Data]),
         try xmerl_scan:string(Data) of  %trying to parse Data as XML
                 {Element, Tail} ->
                         case handle_xml(Element,State) of
@@ -129,12 +134,12 @@ handle_info({tcp, _Socket, DataBin}, State) ->
                         end
         catch
                 ErrType:ErrMsg ->
-                        io:fwrite("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
+                        ?DBG("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
                         {noreply,State#state{buffer = Data}}
         end,
         {noreply, State};
 handle_info({tcp_closed, _Socket}, State) ->
-        io:fwrite("TCP connection closed.~n", []),
+        ?DBG("TCP connection closed.~n", []),
         {stop, normal, State};
 handle_info(Info, State) ->
         {stop, {odd_info, Info}, State}.
@@ -151,7 +156,7 @@ handle_info(Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
-        io:fwrite("Player terminating because of ~p~n.", [Reason]),
+        ?DBG("Player terminating because of ~p~n.", [Reason]),
         ok.
 
 %%--------------------------------------------------------------------
@@ -205,12 +210,13 @@ getPlayers(List) ->
 
 %% Handling incoming messages.
 handle_xml(E, State) ->
+    ?DBG("Got xml: ~n~p", [E]),
         case get_attr_value(type, E) of
                 "error" ->
                         msgInfo(error,State),
                         #xmlElement{content=Content}  = E,
                         [#xmlText{value=Error}] = Content,
-                        io:fwrite("Received error: ~p~n",[Error]),
+                        ?DBG("Received error: ~p~n",[Error]),
                         {stop, Error, errorMsg(State#state.nick)};
                 "loginResponse" ->
                         msgInfo(loginResponse, State),
@@ -218,45 +224,45 @@ handle_xml(E, State) ->
                         Accept = get_attr_value(accept,E1),
                         case Accept of
                                 "no" ->
-                                        io:fwrite("Login denied!~n", []),
+                                        ?DBG("Login denied!~n", []),
                                         E2 = get_sub_element(error,E),
                                         ErrorId = get_attr_value(id, E2),
-                                        io:fwrite("Error id = ~p: ", [ErrorId]),
+                                        ?DBG("Error id = ~p: ", [ErrorId]),
                                         case ErrorId of
                                                 "1" ->
-                                                        io:fwrite("wrong nick.~n",[]);
+                                                        ?DBG("wrong nick.~n",[]);
                                                 "2" ->
-                                                        io:fwrite("improper game type.~n",[]);
+                                                        ?DBG("improper game type.~n",[]);
                                                 "3" ->
-                                                        io:fwrite("players pool overflow.~n",[]);
+                                                        ?DBG("players pool overflow.~n",[]);
                                                 "5" ->
-                                                        io:fwrite("wrong game type description data")
+                                                        ?DBG("wrong game type description data")
                                         end;
                                 "yes" ->
-                                        io:fwrite("Login accepted by server ~p!~n", [State#state.address])
+                                        ?DBG("Login accepted by server ~p!~n", [State#state.address])
                         end,
                         {ok,State};
                 "gameState" ->
                         msgInfo(gameState, State),
-                        "5-in-line-tic-tac-toe" = get_attr_value(id,get_sub_element(gameId, E)),
+                        _GameId = get_attr_value(id,get_sub_element(gameId, E)),
                         E2 = get_sub_element(nextPlayer, E),
                         if E2 == false ->
-                                        io:fwrite("Game Over!~n", []),
+                                        ?DBG("Game Over!~n", []),
                                         E3 = get_sub_element(gameOver, E),
                                         #xmlElement{content=Content} = E3,
                                         Players = getPlayers(Content),
                                         Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(result, Elem)}|Result] end, [],Players),
-                                        lists:foreach(fun({Nick,Result}) -> io:fwrite("Player ~p is a ~p.~n",[Nick,Result]) end, Players1),
+                                        lists:foreach(fun({Nick,Result}) -> ?DBG("Player ~p is a ~p.~n",[Nick,Result]) end, Players1),
                                         {ok,State, thankYouMsg()};
 
                                 true ->
                                         Nick = get_attr_value(nick, E2),
-                                        io:fwrite("Next player to move: ~p~n", [Nick]),
+                                        ?DBG("Next player to move: ~p~n", [Nick]),
                                         E4 = get_sub_element(gameState, E),
                                         E5 = get_sub_element(tac, E4),
                                         X = get_attr_value(x, E5),
                                         Y = get_attr_value(y, E5),
-                                        io:fwrite("Last move: tac, x=~p, y=~p~n",[X,Y]),
+                                        ?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
                                         if Nick == State#state.nick ->
                                                         ets:insert_new(State#state.positions, {{X,Y},tac}),
                                                         Move = make_move(State#state.positions),
@@ -272,7 +278,7 @@ handle_xml(E, State) ->
                         #xmlElement{content=Content} = E,
                         Players = getPlayers(Content),
                         Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(won, Elem),get_attr_value(lost,Elem)}|Result] end, [], Players),
-                        lists:foreach(fun({Nick,Won,Lost}) -> io:fwrite("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, Players1),
+                        lists:foreach(fun({Nick,Won,Lost}) -> ?DBG("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, Players1),
                         {ok, State}
         end.
 
@@ -345,7 +351,7 @@ testPlayerLogin() ->
 
 %% Displays information what message was received and from whom.
 msgInfo(Msg,State) ->
-        io:fwrite("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
+        ?DBG("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
 
 make_move(Positions) ->
         X = crypto:rand_uniform(0,21),
