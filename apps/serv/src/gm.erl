@@ -123,7 +123,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 rec(State) ->
-    ok = inet:setopts(State#state.socket, [{active, true}]),
+    %% handle closed socket by receiving message
+    _ = inet:setopts(State#state.socket, [{active, true}]),
     State.
 
 icl(Msg) ->
