@@ -28,6 +28,7 @@
 	  id :: any(),
 	  type :: any(),
 	  gm :: pid(),
+	  gm_ref :: reference(),
 	  players = [] :: [{pid(), binary()}],
 	  target = [] :: [{pid(), binary()}],
 	  captured = [] :: [{pid(), tag()}],
@@ -53,9 +54,12 @@ init([GameId, GameType, GMPid, Players]) ->
     ?INFO("starting room", []),
     {ok, TRef} = timer:send_after(1000, players_too_slow),
     {ok, #state{timer = TRef, id = GameId, type = GameType,
-		gm = GMPid, target = Players}}.
+		gm = GMPid, target = Players,
+		gm_ref = monitor(process, GMPid)
+	       }}.
 handle_call({join, {Pid, Nick}}, From, 
 	    State = #state{playing = false, target = Target0}) ->
+    _Ref = monitor(process, Pid),
     Players = [{Pid, Nick} | ?s.players],
     Target = tl(Target0),
     Captured = [From | ?s.captured],
@@ -85,6 +89,22 @@ handle_info(players_too_slow, State = #state{playing = false}) ->
     {stop, normal, State};
 handle_info(players_too_slow, State) ->
     {noreply, State};
+handle_info({'DOWN', MonRef, _Type, _Object, Info}, 
+	    State = #state{gm_ref = MonRef}) ->
+    MsgT = "Game Master has crashed with msg: ~p",
+    Msg = sxml:error(io_lib:fwrite(MsgT, [Info])),
+    [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
+    {stop, {gm_crash, Info}, State};
+handle_info({'DOWN', MonRef, Type, Pid, Reason} = Info, State) ->
+    case lists:keyfind(Pid, 1, ?s.players) of
+	{Pid, Nick} ->
+	    MsgT = "Player ~p has crashed with msg: ~p",
+	    Msg = sxml:error(io_lib:fwrite(MsgT, [Nick, Info])),
+	    [ client:send(APid, Msg) || {APid, _} <- ?s.players ],
+	    {stop, {player_crashed, Reason}, State};
+	false ->
+	    {stop, {odd_info, Info}, State}
+    end;
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.
 
