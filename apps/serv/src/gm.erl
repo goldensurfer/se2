@@ -39,7 +39,7 @@
 	  state :: gs()
 	 }).
 
--type gs() :: undefined | error | registered | tournament | playing.
+-type gs() :: undefined | error | registered.
 -type state() :: #state{}.
 -type msg() :: binary().
 
@@ -77,7 +77,7 @@ handle_cast({begin_game, RoomPid, Id, Nicks}, State = #state{state = registered}
     Players = [ {player, [{nick, Nick}], []} || Nick <- Nicks ],
     Msg = {message, [{type,beginGame}], [GameId | Players]},
     gen_tcp:send(?s.socket, sxml:msg(Msg)),
-    {noreply, State#state{state = playing}};
+    {noreply, State};
 handle_cast(Msg, State) ->
     {stop, {odd_cast, Msg}, State}.
 
