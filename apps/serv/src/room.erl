@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join/2]).
+-export([start_link/4, join/2, publish/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -46,6 +46,9 @@ start_link(GameId, GameType, GMPid, Players) ->
 join(Pid, Nick) ->
     gen_server:call(Pid, {join, {self(), Nick}}).
 
+publish(Pid, Msg) ->
+    gen_server:call(Pid, {publish, Msg}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -77,6 +80,9 @@ handle_call({join, {Pid, Nick}}, From,
 	    {noreply, State#state{captured = Captured, 
 				  target = Target, players = Players}}
     end;
+handle_call({publish, Msg}, _From, State) ->
+    [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
+    {noreply, ok, State};
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 

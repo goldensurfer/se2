@@ -74,7 +74,7 @@ handle_call(Request, _From, State) ->
 
 handle_cast({begin_game, RoomPid, Id, Nicks}, State = #state{state = registered}) ->
     Msg = sxml:begin_game(Id, Nicks),
-    gen_tcp:send(?s.socket, sxml:msg(Msg)),
+    gen_tcp:send(?s.socket, Msg),
     {noreply, State};
 handle_cast(Msg, State) ->
     {stop, {odd_cast, Msg}, State}.
