@@ -1,5 +1,6 @@
+%% -*- mode: erlang; coding: utf-8; indent-tabs-mode: nil; tab-width: 8; c-basic-offset: 8; erlang-indent-level: 8; -*- vim:fenc=utf-8:ft=tcl:etw=2:ts=2ts=2:filetype=erlang
 -module(gamer).
-%-compile(export_all).
+
 -behaviour(gen_server).
 
 %% API
@@ -63,7 +64,8 @@ start_link(Address, Port, Nick) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Address, Port, Nick]) ->
+init([Address, Port, Nick0]) ->
+        Nick = atom_to_list(Nick0),
         {ok, Socket} = gen_tcp:connect(Address, Port, [{mode, list}]),
 	?DBG("Connecting...~n",[]),
         String = io_lib:fwrite("<message type=\"playerLogin\"><playerLogin nick=\"~s\" gameType=\"5-in-line-tic-tac-toe\"/></message>", [Nick]),
@@ -118,20 +120,29 @@ handle_cast(Msg, State) ->
 handle_info({tcp, _Socket, DataBin}, State) ->
 	Data0 = DataBin,
 	Data = State#state.buffer++Data0,
-    ?DBG("got tcp packet:~n~p", [Data]),
+        ?DBG("~ngot tcp packet:~n~p~n", [Data]),
         try xmerl_scan:string(Data) of  %trying to parse Data as XML
-                {Element, Tail} ->
-                        case handle_xml(Element,State) of
-                                {ok,State1} ->          % the case when player does not need to asnwer
+            {Element, Tail} ->
+                        try handle_xml(Element,State) of
+                            {ok, State1} ->          % the case when player does not need to asnwer
                                         {noreply, State1#state{buffer=Tail}};
-				{ok,State1,Msg} ->      % the case when player has to answer
+                            {ok, State1, Msg} ->      % the case when player has to answer
 					gen_tcp:send(State#state.socket,Msg),
 					{noreply, State1#state{buffer=Tail}};
-                                {stop,Reason,Msg} ->    % error
+                            {stop, Reason, Msg} ->    % error
                                         gen_tcp:send(State#state.socket,Msg),
                                         gen_tcp:close(State#state.socket),
                                         {stop,Reason,State}
-                        end
+			catch 
+                                error:{stop, Reason, State = #state{}} ->
+                                        gen_tcp:close(State#state.socket),
+                                        {stop, Reason, State};
+                                error:{stop, Reason, Msg} ->
+                                        ?DBG("xml parsing error: ~p, ~n~p", [Reason, Msg]),
+                                        gen_tcp:send(State#state.socket, Msg),
+                                        gen_tcp:close(State#state.socket),
+                                        {stop, Reason, State}
+			end
         catch
                 ErrType:ErrMsg ->
                         ?DBG("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
@@ -180,25 +191,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%%XML parsing
 %%%===================================================================
 
-%% Gets an XML subelement with tag 'Name' from an element 'El'.
-get_sub_element(Name, #xmlElement{} = El) ->
-	#xmlElement{content = Content} = El,
-	case lists:keyfind(Name, #xmlElement.name, Content) of
-		false ->
-			false;
-		Tuple ->
-			Tuple
-	end.
+%% %% Gets an XML subelement with tag 'Name' from an element 'El'.
+%% get_sub_element(Name, #xmlElement{} = El) ->
+%% 	#xmlElement{content = Content} = El,
+%% 	case lists:keyfind(Name, #xmlElement.name, Content) of
+%% 		false ->
+%% 			false;
+%% 		Tuple ->
+%% 			Tuple
+%% 	end.
 	
-%% Gets value of the 'Name' attribute of element 'El'
-get_attr_value(Name, #xmlElement{} = El) ->
-	#xmlElement{attributes = Attrs} = El,
-	case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
-		false ->
-			false;
-		At ->
-			At#xmlAttribute.value
-	end.
+%% %% Gets value of the 'Name' attribute of element 'El'
+%% get_attr_value(Name, #xmlElement{} = El) ->
+%% 	#xmlElement{attributes = Attrs} = El,
+%% 	case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
+%% 		false ->
+%% 			false;
+%% 		At ->
+%% 			At#xmlAttribute.value
+%% 	end.
+
+gav(A, B) ->
+    sxml:gav(A, B).
+
+gse(A, B) ->
+    sxml:gse(A, B).
 	
 %% Generates an XML element using 'El'
 msg(El) ->
@@ -211,7 +228,7 @@ getPlayers(List) ->
 %% Handling incoming messages.
 handle_xml(E, State) ->
     ?DBG("Got xml: ~n~p", [E]),
-        case get_attr_value(type, E) of
+        case gav(type, E) of
                 "error" ->
                         msgInfo(error,State),
                         #xmlElement{content=Content}  = E,
@@ -220,13 +237,13 @@ handle_xml(E, State) ->
                         {stop, Error, errorMsg(State#state.nick)};
                 "loginResponse" ->
                         msgInfo(loginResponse, State),
-                        E1 = get_sub_element(response, E),
-                        Accept = get_attr_value(accept,E1),
+                        E1 = gse(response, E),
+                        Accept = gav(accept,E1),
                         case Accept of
                                 "no" ->
                                         ?DBG("Login denied!~n", []),
-                                        E2 = get_sub_element(error,E),
-                                        ErrorId = get_attr_value(id, E2),
+                                        E2 = gse(error,E),
+                                        ErrorId = gav(id, E2),
                                         ?DBG("Error id = ~p: ", [ErrorId]),
                                         case ErrorId of
                                                 "1" ->
@@ -244,30 +261,43 @@ handle_xml(E, State) ->
                         {ok,State};
                 "gameState" ->
                         msgInfo(gameState, State),
-                        _GameId = get_attr_value(id,get_sub_element(gameId, E)),
-                        E2 = get_sub_element(nextPlayer, E),
-                        if E2 == false ->
+                        _GameId = gav(id, gse(gameId, E)),
+                        case gse({nextPlayer, gameOver}, E) of
+                                {false, E3} ->
                                         ?DBG("Game Over!~n", []),
-                                        E3 = get_sub_element(gameOver, E),
                                         #xmlElement{content=Content} = E3,
                                         Players = getPlayers(Content),
-                                        Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(result, Elem)}|Result] end, [],Players),
+                                        Players1 = lists:foldl(fun(Elem, Result) -> [{gav(nick,Elem),gav(result, Elem)}|Result] end, [],Players),
                                         lists:foreach(fun({Nick,Result}) -> ?DBG("Player ~p is a ~p.~n",[Nick,Result]) end, Players1),
                                         {ok,State, thankYouMsg()};
-
-                                true ->
-                                        Nick = get_attr_value(nick, E2),
-                                        ?DBG("Next player to move: ~p~n", [Nick]),
-                                        E4 = get_sub_element(gameState, E),
-                                        E5 = get_sub_element(tac, E4),
-                                        X = get_attr_value(x, E5),
-                                        Y = get_attr_value(y, E5),
-                                        ?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
-                                        if Nick == State#state.nick ->
+                                {E2, false} ->
+                                        Nick = gav(nick, E2),
+                                        E4 = gse(gameState, E),
+                                        Me = State#state.nick,
+                                        ?DBG("me: ~p, move is his: ~p", [Me, Nick]),
+                                        case {sxml:get_sub_element(tac, E4), Nick} of
+                                                {false, Me} ->
+                                                        ?DBG("first move, me!", []),
+                                                        Move = make_move(State#state.positions),
+                                                        {ok, State, ticMsg(Move)};
+                                                {false, _NotMe} ->
+                                                        ?DBG("first move, not me :(", []),
+                                                        {ok, State};
+                                                {E5, Me} ->
+                                                        ?DBG("my move", []),
+                                                        X = gav(x, E5),
+                                                        Y = gav(y, E5),
+                                                        ?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
                                                         ets:insert_new(State#state.positions, {{X,Y},tac}),
                                                         Move = make_move(State#state.positions),
-                                                        {ok, State, ticMsg(Move)}
-
+                                                        {ok, State, ticMsg(Move)};
+                                                {E5, _NotMe} ->
+                                                        ?DBG("his move", []),
+                                                        X = gav(x, E5),
+                                                        Y = gav(y, E5),
+                                                        ?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
+                                                        ets:insert_new(State#state.positions, {{X,Y},tac}),
+                                                        {ok, State}
                                         end
                         end;
                 "serverShutdown" ->
@@ -277,7 +307,7 @@ handle_xml(E, State) ->
                         msgInfo(championsList,State),
                         #xmlElement{content=Content} = E,
                         Players = getPlayers(Content),
-                        Players1 = lists:foldl(fun(Elem, Result) -> [{get_attr_value(nick,Elem),get_attr_value(won, Elem),get_attr_value(lost,Elem)}|Result] end, [], Players),
+                        Players1 = lists:foldl(fun(Elem, Result) -> [{gav(nick,Elem),gav(won, Elem),gav(lost,Elem)}|Result] end, [], Players),
                         lists:foreach(fun({Nick,Won,Lost}) -> ?DBG("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, Players1),
                         {ok, State}
         end.
