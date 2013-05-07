@@ -6,6 +6,9 @@ OPTS_COMMON=-pa apps/*/ebin -pa deps/*/ebin -env $(ENV) -boot start_sasl
 
 .PHONY: deps
 
+normal: $(REBAR)
+	$(REBAR) compile skip_deps=true
+
 all: $(REBAR)
 	$(REBAR) get-deps compile
 

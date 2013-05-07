@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join/2, publish/2]).
+-export([start_link/4, join/2, publish/2, to_gm/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -49,6 +49,9 @@ join(Pid, Nick) ->
 publish(Pid, Msg) ->
     gen_server:call(Pid, {publish, Msg}).
 
+to_gm(Pid, Msg) ->
+    gen_server:call(Pid, {to_gm, Msg}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -68,10 +71,11 @@ handle_call({join, {Pid, Nick}}, From,
     Captured = [From | ?s.captured],
     case Target of
 	[] ->
-	    ?INFO("starting game!", []),
+	    ?INFO("starting game! ~p", [?s.id]),
 	    [ gen_server:reply(Client, true) || Client <- Captured ],
 	    timer:cancel(?s.timer),
 	    Nicks = [ ANick || {_, ANick} <- Players ],
+	    gproc:reg({n, l, {room, ?s.id}}),
 	    gm:begin_game(?s.gm, ?s.id, Nicks),
 	    {noreply, State#state{playing = true, captured = [], 
 				  target = [], players = Players}};
@@ -82,7 +86,10 @@ handle_call({join, {Pid, Nick}}, From,
     end;
 handle_call({publish, Msg}, _From, State) ->
     [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
-    {noreply, ok, State};
+    {reply, ok, State};
+handle_call({to_gm, Msg}, _From, State) ->
+    gm:send(?s.gm, Msg),
+    {reply, ok, State};
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
@@ -101,7 +108,7 @@ handle_info({'DOWN', MonRef, _Type, _Object, Info},
     Msg = sxml:error(io_lib:fwrite(MsgT, [Info])),
     [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
     {stop, {gm_crash, Info}, State};
-handle_info({'DOWN', MonRef, Type, Pid, Reason} = Info, State) ->
+handle_info({'DOWN', _MonRef, _Type, Pid, Reason} = Info, State) ->
     case lists:keyfind(Pid, 1, ?s.players) of
 	{Pid, Nick} ->
 	    MsgT = "Player ~p has crashed with msg: ~p",

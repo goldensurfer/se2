@@ -16,10 +16,8 @@
 
 -behaviour(gen_server).
 
--compile(export_all).
-
 %% API
--export([start_link/4]).
+-export([start_link/4, join_game/4, send/2]).
 
 -export([t/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
@@ -55,6 +53,11 @@
 start_link(ListenerPid, Socket, Transport, Opts) ->
     gen_server:start_link(?MODULE, [ListenerPid, Socket, Transport, Opts], []).
 
+send(Pid, Msg) ->
+    gen_server:cast(Pid, Msg).
+%% send(Pid, Msg) ->
+%%     gen_server:cast(Pid, sxml:msg(Msg)).
+
 join_game(Pid, GameType, GamePid, GameId) ->
     gen_server:cast(Pid, {join_game, GameType, GamePid, GameId}).
 
@@ -84,7 +87,7 @@ init([ListenerPid, Socket, Transport, _Opts = []]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({join_game, GameType, GamePid, GameId}, State) ->
+handle_cast({join_game, GameType, GamePid, _GameId}, State) ->
     gproc:munreg(p, l, [{registered_for_game, GameType}, {registered}]),
     case room:join(GamePid, ?s.nick) of
 	true ->
@@ -102,7 +105,7 @@ handle_cast(Msg, State) ->
 
 handle_info({tcp, _Socket, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
-    ?D("got data: ~p", [Data0]),
+    ?DBG("got data: ~p", [Data0]),
     Data = State#state.buffer++Data0,
     try xmerl_scan:string(Data) of
 	{Element, Tail} ->
@@ -111,7 +114,14 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		    {noreply, rec(State1#state{buffer = Tail})};
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
-		    {noreply, rec(State1#state{buffer = Tail})}
+		    {noreply, rec(State1#state{buffer = Tail})};
+		{stop, Reason, State1 = #state{socket = Socket}} ->
+		    gen_tcp:close(Socket),
+		    {stop, Reason, State1};
+		{stop, Reason, Msg} ->
+		    gen_tcp:send(?s.socket, Msg),
+		    gen_tcp:close(?s.socket),
+		    {stop, Reason, State}
 	    catch 
 		error:{stop, Reason, State = #state{}} ->
 		    gen_tcp:close(State#state.socket),
@@ -123,7 +133,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 	    end
     catch
 	ErrType:ErrMsg ->
-	    ?D("parsing xml: ~p", [{ErrType, ErrMsg}]),
+	    ?DBG("parsing xml: ~p", [{ErrType, ErrMsg}]),
 	    {noreply, rec(State#state{buffer = Data})}
     end;
 handle_info({accept_ack, ListenerPid}, State) ->
@@ -147,9 +157,6 @@ code_change(_OldVsn, State, _Extra) ->
 msg(Msg) ->
     sxml:msg(Msg).
 
-icl(Msg) ->
-    {stop, incomplete_xml, sxml:error(Msg)}.
-
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
     State.
@@ -161,42 +168,53 @@ rec(State) ->
 			{stop, Error::atom(), ErrorMsg::msg()} |
 			{stop, Reason::atom(), NewState::state()}. %% this one is for graceful termination
 handle_xml(E, State) ->
-    ?D("~p", [{E, State}]),
+    ?DBG("~p", [{E, State}]),
     Type = gav(type, E),
-    ?D("msg type: ~p", [Type]),
+    ?DBG("msg type: ~p", [Type]),
     case Type of
 	"logout" ->
-	    ?D("msg type: ~p", [Type]),
+	    ?DBG("msg type: ~p", [Type]),
 	    {ok, State};
 	"error" ->
-	    {stop, received_error, State};
+	    ?DBG("GOT ERROR:~n~p", [E]),
+	    {stop, {received_error, E}, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
 	"playerLogin" ->
 	    E1 = gse(playerLogin, E),
 	    Nick = gav(nick, E1), 
 	    GameType = gav(gameType, E1),
-	    ?D("msg type ~p, nick ~p, gametype ~p", [Type, Nick, GameType]),
+	    ?DBG("msg type ~p, nick ~p, gametype ~p", 
+		 [Type, Nick, GameType]),
 	    login(Nick, GameType, State);
 	"move" ->
 	    E1 = gse(gameId, E), 
-	    E2 = gse(move, E),
+	    MoveEl = gse(move, E),
 	    TheId = gav(id, E1),
-	    ?D("msg type: ~p, id: ~p", [Type, TheId]),
-	    {ok, State};
+	    ?DBG("msg type: ~p, id: ~p", [Type, TheId]),
+	    case gproc:where({n, l, {room, TheId}}) of
+		Pid when is_pid(Pid) ->
+		    room:to_gm(Pid, sxml:move(TheId, MoveEl)),
+		    {ok, State};
+		_ ->
+		    T = "game with gameId = ~p does not exist",
+		    ErrMsg = io_lib:fwrite(T, [TheId]),
+		    {stop, {error, no_such_game_id, TheId}, 
+		     sxml:error(ErrMsg)}
+	    end;
 	"leaveGame" ->
 	    E1 = gse(gameId, E),
 	    TheId = gav(id, E1),
-	    ?D("msg type: ~p, id: ~p", [Type, TheId]),
+	    ?DBG("msg type: ~p, id: ~p", [Type, TheId]),
 	    {ok, State};
 	"thank you" ->
 	    E1 = gse(gameId, E),
 	    TheId = gav(id, E1),
-	    ?D("msg type: ~p, id: ~p", [Type, TheId]),
+	    ?DBG("msg type: ~p, id: ~p", [Type, TheId]),
 	    {ok, State};
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
-	    ?D(ErrMsg, []),
+	    ?DBG(ErrMsg, []),
 	    ?ERROR(ErrMsg, []),
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.

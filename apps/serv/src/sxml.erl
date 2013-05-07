@@ -13,6 +13,7 @@
 
 %% helpers
 -export([msg/1, get_sub_element/2, get_sub_elements/2, get_attr_value/2, 
+	 get_all_subs/1,
 	 gse/2, gsen/3, gav/2
 	]).
 
@@ -21,7 +22,7 @@
 -export([error/1]).
 
 %% protocol gm
--export([begin_game/2]).
+-export([begin_game/2, next_player/3, game_over/3, gm_login/2, move/2]).
 
 %% testing stuff
 -export([ping/0, pong/0]).
@@ -32,6 +33,9 @@
 %%%===================================================================
 %%% XML parsing helpers
 %%%===================================================================
+
+get_all_subs(#xmlElement{} = El) ->
+    El#xmlElement.content.
 
 get_sub_elements(Name, #xmlElement{} = El) ->
     #xmlElement{content = Content} = El,
@@ -106,7 +110,7 @@ gsen(Name, #xmlElement{} = El, N) ->
 	N ->
 	    L;
 	_ ->
-	    Msg = io:fwrite("please provide exactly ~p tags ~p", [Name]),
+	    Msg = io_lib:fwrite("please provide exactly ~p tags ~p", [N, Name]),
 	    erlang:error({stop, incomplete_xml, sxml:error(Msg)})
     end.
     
@@ -115,6 +119,9 @@ gsen(Name, #xmlElement{} = El, N) ->
 %%%===================================================================
 %%% misc messages
 %%%===================================================================
+
+msg(El) ->
+    lists:flatten(xmerl:export_simple_content([El], xmerl_xml)).
 
 error(Msg) ->
     msg({message, [{type,error}], [#xmlText{value = Msg}]}).
@@ -164,9 +171,33 @@ begin_game(Id, Nicks) ->
     Msg = {message, [{type,beginGame}], [GameId | Players]},
     msg(Msg).
 
+next_player(Id, Nick, GameState) ->
+    GameId = {gameId, [{id, Id}], []},
+    Player = {nextPlayer, [{nick, Nick}], []},
+    Msg = {message, [{type, gameState}], [GameId, Player, GameState]},
+    msg(Msg).
+
+move(GameId, MoveEl) ->
+    GI = {gameId, [{id, GameId}], []},
+    Msg = {message, [{type, move}], [GI, MoveEl]},
+    msg(Msg).
+
+game_over(Id, {Winner, Loser}, GS) ->
+    GameId = {gameId, [{id, Id}], []},
+    PlayerA = {player, [{nick, Winner}, {result, "winner"}], []},
+    PlayerB = {player, [{nick, Loser}, {result, "loser"}], []},
+    GO = {gameOver, [], [PlayerA, PlayerB]},
+    GameState = case GS of 
+		    undefined ->
+			{gameState, [], []};
+		    {X, Y} ->
+			Tac = {tac, [{x, X}, {y, Y}], []},
+			{gameState, [], [Tac]}
+		end,
+    Msg = {message, [{type, gameState}], [GameId, GO, GameState]},
+    msg(Msg).
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-msg(El) ->
-    lists:flatten(xmerl:export_simple_content([El], xmerl_xml)).

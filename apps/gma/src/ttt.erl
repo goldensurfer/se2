@@ -13,7 +13,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3, check_conditions/1]).
+-export([start_link/3, move/3, check_conditions/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -29,7 +29,7 @@
 	  players :: [binary()],
 	  board = ets:new(board_state, []) :: ets:tid(),
 	  next = xs :: who(),
-	  range = {1, 20} :: {non_neg_integer(), non_neg_integer()}
+	  range = {0, 19} :: {non_neg_integer(), non_neg_integer()}
 	 }).
 
 -define(s, State#state).
@@ -40,6 +40,9 @@
 
 start_link(Cl, GameId, Players) ->
     gen_server:start_link(?MODULE, [Cl, GameId, Players], []).
+
+move(Pid, X, Y) ->
+    gen_server:cast(Pid, {move, X, Y}).
 
 check_conditions([A, A]) ->
     false;
@@ -57,33 +60,40 @@ init([Cl, GameId, Nicks]) ->
     Players = lists:zip([xs, os], Nicks),
     {ok, #state{cl = Cl, id = GameId, players = Players}}.
 
-handle_call({move, Who, X, Y} = Move, _From, State = #state{next = Who}) ->
+handle_call(_Request, _From, State) ->
+    {stop, {odd_call, _Request}, State}.
+
+handle_cast({move, X, Y}, State = #state{next = Who}) ->
     case check_range(X, Y, ?s.range) of
-	ok ->
+	true ->
 	    case ets:insert_new(?s.board, {{X, Y}, Who}) of
 		true ->
 		    case check_victory(?s.range, ?s.board) of
 			true ->
-			    {stop, normal, {game_over, player(Who, State), Move}, State};
+			    Winner = player(other(Who), State),
+			    WL = {Winner, player(Who, State)},
+			    gm_client:game_over(?s.id, WL, {X, Y}),
+			    ?DBG("game over: ~p won via 5 in line", [Winner]),
+			    {stop, normal, State};
 			false ->
-			    {reply, {next_player, other(Who), {Who, X, Y}}, State}
+			    gm_client:next_player(?s.id, other(Who), {X, Y}),
+			    {noreply, State}
 		    end;
 		false ->
-		    {stop, normal, {game_over, player(other(Who), State), Move}, State}
+		    WL = {player(other(Who), State), player(Who, State)},
+		    gm_client:game_over(?s.id, WL, {X, Y}),
+		    {stop, normal, State}
 	    end;
-	error ->
-	    {stop, normal, {game_over, player(other(Who), State), Move}, State}
+	false ->
+	    WL = {player(other(Who), State), player(Who, State)},
+	    gm_client:game_over(?s.id, WL, {X, Y}),
+	    {stop, normal, State}
     end;
-handle_call({move, Who, _X, _Y} = Move, _From, State) ->
-    {stop, normal, {game_over, player(other(Who), State), Move}, State};
-handle_call(_Request, _From, State) ->
-    {stop, {odd_call, _Request}, State}.
-
 handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(do_begin, State) ->
-    gm_client:next_player(?s.id, player(?s.next, State)),
+    gm_client:next_player(?s.id, player(?s.next, State), undefined),
     {noreply, State};
 handle_info(_Info, State) ->
     {stop, {odd_info, _Info}, State}.
@@ -107,9 +117,12 @@ other(xs) ->
 other(os) ->
     xs.
 
-check_range(_X, _Y, _) ->
-    error(non_impl).
+check_range(X, Y, {Min, Max}) ->
+    interval(Min, X, Max) andalso interval(Min, Y, Max).
+
+interval(Min, X, Max) ->
+    Min =< X andalso X =< Max. 
     
-check_victory(_, _) ->
-    error(non_impl).
-    
+check_victory({_Min, _Max}, _Tid) ->
+    false.
+

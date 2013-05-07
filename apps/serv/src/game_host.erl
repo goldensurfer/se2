@@ -74,8 +74,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 create_id() ->
-    L = [ crypto:rand_uniform($a, $z) || _ <- lists:seq(1, 8) ],
-    list_to_binary(L).
+    [ crypto:rand_uniform($a, $z) || _ <- lists:seq(1, 8) ].
 
 create_game(GMPid, GameType, ListOfPlayers) ->
     GameId = create_id(),

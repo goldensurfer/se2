@@ -19,7 +19,7 @@
 -compile(export_all).
 
 %% API
--export([start_link/4, begin_game/3]).
+-export([start_link/4, begin_game/3, send/2]).
 
 -export([t/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
@@ -58,6 +58,9 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
 begin_game(Pid, Id, Nicks) ->
     gen_server:cast(Pid, {begin_game, self(), Id, Nicks}).
 
+send(Pid, Msg) ->
+    gen_server:cast(Pid, {send, Msg}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -72,7 +75,10 @@ init([ListenerPid, Socket, Transport, _Opts = []]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({begin_game, RoomPid, Id, Nicks}, State = #state{state = registered}) ->
+handle_cast({send, Msg}, State) ->
+    gen_tcp:send(?s.socket, Msg),
+    {noreply, State};
+handle_cast({begin_game, _RoomPid, Id, Nicks}, State = #state{state = registered}) ->
     Msg = sxml:begin_game(Id, Nicks),
     gen_tcp:send(?s.socket, Msg),
     {noreply, State};
@@ -144,12 +150,6 @@ handle_xml(E, State) ->
 	    {stop, received_error, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
-	"move" ->
-	    E1 = gse(gameId, E), 
-	    _E2 = gse(move, E),
-	    _TheId = gav(id, E1),
-	    ?D("msg type: ~p, id: ~p", [Type, _TheId]),
-	    {ok, State};
 	"playerLeftGame" ->
 	    E1 = gse(player, E), 
 	    E2 = gse(gameId, E),
@@ -161,26 +161,24 @@ handle_xml(E, State) ->
 	    ?D("msg type: ~p", [Type]),
 	    {ok, State};
 	"gameState" ->
-	    GameId = gse(gameId, E),
+	    GameIdTag = gse(gameId, E),
+	    GS = gse(gameState, E),
+	    GameId = gav(id, GameIdTag),
 	    case gse({nextPlayer, gameOver}, E) of
 		{E1, false} ->
-		    case gav(nick, E1) of
-			false ->
-			    icl("nick attribute missing");
-			Nick ->
-			    ?D("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
-			    {ok, State}
+		    Nick = gav(nick, E1),
+		    ?D("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
+		    case gproc:where({n, l, {room, GameId}}) of 
+			Pid when is_pid(Pid) ->
+			    room:publish(Pid, sxml:next_player(GameId, Nick, GS)),
+			    {ok, State};
+			_ ->
+			    icl("game with such gameId does not exist")
 		    end;
 		{_, E2} ->
-		    Nick = gav(nick, E2), 
-		    Res = gav(result, E2),
-		    case Res of
-			Res when Res /= "winner", Res /= "loser" ->
-			    icl("result attribute: allowed values are loser or winner");
-			Res ->
-			    ?D("msg type: ~p/gameOver, gameId: ~p, nick: ~p, result", [Type, GameId, Nick, Res]),
-			    {ok, State}
-		    end
+		    Players = sxml:gsen(player, E2, 2),
+		    ?D("msg type: ~p/gameOver, gameId: ~p, ~nplayers: ~p", [Type, GameId, Players]),
+		    {ok, State}
 	    end;
 	"gameMasterLogin" ->
 	    E1 = gse(gameMasterLogin, E),
@@ -210,8 +208,9 @@ login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = unde
 	false ->
     	    {stop, already_registered, sxml:login_response(gm_already_registered)}
     end;
-login(_, OtherGame, _, _, #state{state = undefined}) ->
-    {stop, improper_game_type, sxml:login_response(improper_game_type)};
+login(_, _OtherGame, _, _, #state{state = undefined}) ->
+    Msg = sxml:login_response(improper_game_type),
+    {stop, {improper_game_type, _OtherGame}, Msg};
 login(_, _, _, _, _) ->
     {stop, already_registered, sxml:login_response(already_registered)}.
 
@@ -230,7 +229,7 @@ xml_test() ->
 			 {_, _} ->
 			     ok
 		     catch
-			 ErrType:ErrMsg ->
+			 _ErrType:_ErrMsg ->
 			     err
 		     end,
 		{No, Arg, Res, Res} 

@@ -20,10 +20,10 @@
 
 %% API
 -export([start_link/3, start_link/4]).
--export([next_player/2]).
+-export([next_player/3, game_over/3]).
 
 %% test API
--export([sendGS/0, sendLogin/0]).
+%% -export([sendGS/0, sendLogin/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -56,19 +56,22 @@ start_link(Host, Port, Id) ->
     start_link(Host, Port, Id, ?MAGIC).
 
 start_link(Host, Port, Id, Game) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Host, Port, Id, Game], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Host, Port, Id, Game], []).
 
-next_player(GameId, Next) ->
-    gen_server:call(?SERVER, {next_player, GameId, Next}).
+next_player(GameId, Next, GS) ->
+    gen_server:call(?SERVER, {next_player, GameId, Next, GS}).
 
-sendGS() ->
-    GI = {gameId, [{id, "123"}], []},
-    NP = {nextPlayer, [{nick, "TestPlayer"}], []},
-    gen_server:cast(?SERVER, msg({message, [{type, "gameState"}], [GI, NP]})).
+game_over(GameId, Winner, GS) ->
+    gen_server:call(?SERVER, {game_over, GameId, Winner, GS}).
 
-sendLogin() ->
-    Msg = sxml:msg({message, [{type, playerLogin}], [{playerLogin, [{nick, "Jaedong"}, {gameType, ?MAGIC}], []}]}),
-    gen_server:cast(?SERVER, Msg).
+%% sendGS() ->
+%%     GI = {gameId, [{id, "123"}], []},
+%%     NP = {nextPlayer, [{nick, "TestPlayer"}], []},
+%%     gen_server:cast(?SERVER, msg({message, [{type, "gameState"}], [GI, NP]})).
+
+%% sendLogin() ->
+%%     Msg = sxml:msg({message, [{type, playerLogin}], [{playerLogin, [{nick, "Jaedong"}, {gameType, ?MAGIC}], []}]}),
+%%     gen_server:cast(?SERVER, Msg).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -79,11 +82,23 @@ init([Host, Port, Id, Game]) ->
     gen_tcp:send(Socket, sxml:gm_login(Id, Game)),
     {ok, #state{socket = Socket}}.
 
-handle_call({next_player, Id, Player}, _From, State) ->
+handle_call({next_player, Id, Player, GS}, _From, State) ->
     GameId = {gameId, [{id, Id}], []},
     NextPlayer = {nextPlayer, [{nick, Player}], []},
-    Msg = {message, [{type, gameState}], [GameId, NextPlayer]},
+    GameState = case GS of 
+		    undefined ->
+			{gameState, [], []};
+		    {tac, X, Y} ->
+			Tac = {tac, [{x, X}, {y, Y}], []},
+			{gameState, [Tac], []}
+		end,
+    Msg = {message, [{type, gameState}], [GameId, NextPlayer, GameState]},
     gen_tcp:send(?s.socket, sxml:msg(Msg)),
+    {reply, ok, State};
+handle_call({game_over, Id, {Winner, Loser}, GS}, _From, State) ->
+    ?DBG("game over: ~p", [{Id, {Winner, Loser}, GS}]),
+    timer:sleep(1000),
+    gen_tcp:send(?s.socket, sxml:game_over(Id, {Winner, Loser}, GS)),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -95,7 +110,7 @@ handle_cast(Msg, State) ->
 
 handle_info({tcp, _Socket, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
-    ?D("got data: ~p", [Data0]),
+    ?DBG("got data: ~p", [Data0]),
     Data = State#state.buffer++Data0,
     try xmerl_scan:string(Data) of
 	{Element, Tail} ->
@@ -112,7 +127,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 	    end
     catch
 	ErrType:ErrMsg ->
-	    ?D("parsing xml: ~p", [{ErrType, ErrMsg}]),
+	    ?DBG("parsing xml: ~p", [{ErrType, ErrMsg}]),
 	    {noreply, rec(State#state{buffer = Data})}
     end;
 handle_info({tcp_closed, _}, State) ->
@@ -139,8 +154,9 @@ msg(Msg) ->
 			{ok, NewState::state(), Response::msg()} |
 			{stop, Error::atom(), ErrorMsg::msg()}.
 handle_xml(E, State) ->
-    ?D("~p", [{E, State}]),
-    case gav(type, E) of
+    ?DBG("~p", [{E, State}]),
+    Type = gav(type, E),
+    case Type of
 	"ping" ->
 	    {ok, State, sxml:pong()};
 	"beginGame" ->
@@ -161,10 +177,23 @@ handle_xml(E, State) ->
 		    {stop, {login_rejected_by_server, ErrId}}
 	    end;
 	"move" ->
-	    error(not_impl);
+	    %% erlang:error(not_impl),
+	    E1 = gse(gameId, E), 
+	    E2 = gse(move, E),
+	    E3 = gse(tic, E2),
+	    X = gav(x, E3),
+	    Y = gav(y, E3),
+	    GameId = gav(id, E1),
+	    ?D("msg type: ~p, id: ~p", [Type, GameId]),
+	    case gproc:where({n, l, {game, GameId}}) of
+	    	Pid when is_pid(Pid) ->
+	    	    ttt:move(Pid, X, Y),
+		    {ok, State};
+		_ ->
+		    {stop, {no_such_game_id, GameId}, State}
+	    end;
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
-	    ?D(ErrMsg, []),
 	    ?ERROR(ErrMsg, []),
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.
@@ -179,7 +208,7 @@ begin_game(GameId, Players, State) ->
 	    Key = {n, l, {game, GameId}},
 	    case gproc:reg_or_locate(Key) of
 		{Self, _} ->
-		    {ok, GamePid} = games_sup:add_child(?SERVER, GameId, Players),
+		    {ok, GamePid} = games_sup:add_child(self(), GameId, Players),
 		    gproc:give_away(Key, GamePid),
 		    {ok, State};
 		_ ->
@@ -198,7 +227,7 @@ finish_login(State) ->
     {ok, State}.
 
 rec(State) ->
-    ok = inet:setopts(State#state.socket, [{active, true}]),
+    inet:setopts(State#state.socket, [{active, true}]),
     State.
 
     
