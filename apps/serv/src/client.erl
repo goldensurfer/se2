@@ -55,22 +55,9 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
 
 send(Pid, Msg) ->
     gen_server:cast(Pid, Msg).
-%% send(Pid, Msg) ->
-%%     gen_server:cast(Pid, sxml:msg(Msg)).
 
 join_game(Pid, GameType, GamePid, GameId) ->
     gen_server:cast(Pid, {join_game, GameType, GamePid, GameId}).
-
-sendLR() ->
-    R = {response, [{accept, "yes"}], []},
-    Msg = {message, [{type, "loginResponse"}], [R]},
-    gen_server:cast(?MODULE, msg(Msg)).
-
-sendBG() ->
-    GI = {gameId, [{id, "123"}], []},
-    N = {player, [{nick, "Jaedong"}], []},
-    Msg = {message, [{type, "beginGame"}], [GI, N]},
-    gen_server:cast(?MODULE, msg(Msg)).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -153,9 +140,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-msg(Msg) ->
-    sxml:msg(Msg).
 
 rec(State) ->
     ok = inet:setopts(State#state.socket, [{active, true}]),
@@ -252,7 +236,7 @@ xml_test() ->
 			 {_, _} ->
 			     ok
 		     catch
-			 ErrType:ErrMsg ->
+			 _ErrType:_ErrMsg ->
 			     err
 		     end,
 		{No, Arg, Res, Res} 
