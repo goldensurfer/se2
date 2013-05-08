@@ -176,20 +176,19 @@ handle_xml(E, State) ->
 	    GameIdTag = gse(gameId, E),
 	    GS = gse(gameState, E),
 	    GameId = gav(id, GameIdTag),
+	    Pid = validate_room_id(GameId),
 	    case gse({nextPlayer, gameOver}, E) of
 		{E1, false} ->
 		    Nick = gav(nick, E1),
-		    ?D("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
-		    case gproc:where({n, l, {room, GameId}}) of 
-			Pid when is_pid(Pid) ->
-			    room:publish(Pid, sxml:next_player(GameId, Nick, GS)),
-			    {ok, State};
-			_ ->
-			    icl("game with such gameId does not exist")
-		    end;
+		    ?DBG("msg type: ~p/nextPlayer, gameId: ~p, nick: ~p", [Type, GameId, Nick]),
+		    room:publish(Pid, sxml:next_player(GameId, Nick, GS)),
+		    {ok, State};
 		{_, E2} ->
 		    Players = sxml:gsen(player, E2, 2),
-		    ?D("msg type: ~p/gameOver, gameId: ~p, ~nplayers: ~p", [Type, GameId, Players]),
+		    ?DBG("msg type: ~p/gameOver, gameId: ~p, ~nplayers: ~p~nGS:~p", 
+		       [Type, GameId, Players, GS]),
+		    WL = get_winner_loser(Players),
+		    room:publish(Pid, sxml:game_over(GameId, WL, GS)),
 		    {ok, State}
 	    end;
 	"gameMasterLogin" ->
@@ -206,6 +205,41 @@ handle_xml(E, State) ->
 	    ?ERROR(ErrMsg, []),
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.
+
+validate_room_id(GameId) ->
+    case gproc:where({n, l, {room, GameId}}) of 
+	Pid when is_pid(Pid) ->
+	    Pid;
+	_ ->
+	    T = "game with gameId = ~p does not exist",
+	    Msg = io_lib:fwrite(T, [GameId]),
+	    erlang:error({stop, wrong_room_id, sxml:error(Msg)})
+    end.
+
+get_winner_loser(Players) ->
+    {get_pl("winner", Players), get_pl("loser", Players)}.
+
+get_pl(Result, Players) ->
+    Filter = fun(Pl) -> Result =:= sxml:get_attr_value(result, Pl) end,
+    L = lists:filter(Filter, Players),
+    ?DBG("L is ~p", [L]),
+    case L of
+	[Pl] ->
+	    Res = sxml:get_attr_value(nick, Pl),
+	    T = "~p has no nick specified",
+	    Msg = io_lib:fwrite(T, [Result]),
+	    Res =/= false orelse
+		begin
+		    ?DBG("~p", [Msg]),
+		    erlang:error({stop, incomplete_xml, sxml:error(Msg)})
+		end,
+	    Res;
+	[] ->
+	    T = "please specify the ~p",
+	    Msg = io_lib:fwrite(T, [Result]),
+	    erlang:error({stop, incomplete_xml, sxml:error(Msg)})
+    end.
+	    
 
 %%%===================================================================
 %%% Commands
