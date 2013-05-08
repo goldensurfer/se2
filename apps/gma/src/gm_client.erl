@@ -88,9 +88,9 @@ handle_call({next_player, Id, Player, GS}, _From, State) ->
     GameState = case GS of 
 		    undefined ->
 			{gameState, [], []};
-		    {tac, X, Y} ->
+		    {X, Y} ->
 			Tac = {tac, [{x, X}, {y, Y}], []},
-			{gameState, [Tac], []}
+			{gameState, [], [Tac]}
 		end,
     Msg = {message, [{type, gameState}], [GameId, NextPlayer, GameState]},
     gen_tcp:send(?s.socket, sxml:msg(Msg)),
