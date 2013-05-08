@@ -180,26 +180,31 @@ handle_xml(E, State) ->
 		    {stop, {login_rejected_by_server, ErrId}}
 	    end;
 	"move" ->
-	    %% erlang:error(not_impl),
 	    E1 = gse(gameId, E), 
 	    E2 = gse(move, E),
 	    E3 = gse(tic, E2),
 	    X = gav(x, E3),
 	    Y = gav(y, E3),
 	    GameId = gav(id, E1),
-	    ?D("msg type: ~p, id: ~p", [Type, GameId]),
-	    case gproc:where({n, l, {game, GameId}}) of
-	    	Pid when is_pid(Pid) ->
-	    	    ttt:move(Pid, X, Y),
-		    {ok, State};
-		_ ->
-		    {stop, {no_such_game_id, GameId}, State}
-	    end;
+	    Pid = validate_game_id(GameId),
+	    ttt:move(Pid, X, Y),
+	    {ok, State};
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
 	    ?ERROR(ErrMsg, []),
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.
+
+validate_game_id(GameId) ->
+    case gproc:where({n, l, {game, GameId}}) of
+	Pid when is_pid(Pid) ->
+	    Pid;
+	_ ->
+	    T = "game with gameId = ~p does not exist",
+	    Msg = io_lib:fwrite(T, [GameId]),
+	    erlang:error({stop, wrong_game_id, sxml:error(Msg)})
+    end.
+
 
 %%%===================================================================
 %%% Commands
