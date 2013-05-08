@@ -20,6 +20,7 @@ start_all(Host, Port, Id, Game) ->
     ok = ensure(gproc, permanent),
     ok = ensure(inets, permanent),
     ok = ensure(lager, permanent),
+    lager:set_loglevel(lager_console_backend, debug),
     ok = application:start(gma, permanent),
     gm_client:start_link(Host, Port, Id, Game).
 
