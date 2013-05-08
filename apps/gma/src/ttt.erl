@@ -19,6 +19,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-include_lib("serv/include/logging.hrl").
+
 -define(SERVER, ?MODULE). 
 
 -type who() ::  xs | os.
@@ -63,7 +65,10 @@ init([Cl, GameId, Nicks]) ->
 handle_call(_Request, _From, State) ->
     {stop, {odd_call, _Request}, State}.
 
-handle_cast({move, X, Y}, State = #state{next = Who}) ->
+handle_cast({move, X0, Y0}, State = #state{next = Who}) ->
+    ?DBG("move ~p,~p by ~p", [X0, Y0, player(Who, State)]),
+    X = list_to_integer(X0),
+    Y = list_to_integer(Y0),
     case check_range(X, Y, ?s.range) of
 	true ->
 	    case ets:insert_new(?s.board, {{X, Y}, Who}) of
@@ -76,16 +81,25 @@ handle_cast({move, X, Y}, State = #state{next = Who}) ->
 			    ?DBG("game over: ~p won via 5 in line", [Winner]),
 			    {stop, normal, State};
 			false ->
-			    gm_client:next_player(?s.id, other(Who), {X, Y}),
-			    {noreply, State}
+			    Other = other(Who),
+			    OtherNick = player(Other, State),
+			    ?DBG("next: ~p", [OtherNick]),
+			    gm_client:next_player(?s.id, OtherNick, {X, Y}),
+			    {noreply, State#state{next = Other}}
 		    end;
 		false ->
-		    WL = {player(other(Who), State), player(Who, State)},
+		    Winner = player(other(Who), State),
+		    Loser = player(Who, State),
+		    WL = {Winner, Loser},
+		    ?DBG("game over: ~p won via move to occupied position by ~p", [Winner, Loser]),
 		    gm_client:game_over(?s.id, WL, {X, Y}),
 		    {stop, normal, State}
 	    end;
 	false ->
-	    WL = {player(other(Who), State), player(Who, State)},
+	    Winner = player(other(Who), State),
+	    Loser = player(Who, State),
+	    WL = {Winner, Loser},
+	    ?DBG("game over: ~p won via move outside the boundaries by", [Winner, Loser]),
 	    gm_client:game_over(?s.id, WL, {X, Y}),
 	    {stop, normal, State}
     end;
@@ -117,7 +131,8 @@ other(xs) ->
 other(os) ->
     xs.
 
-check_range(X, Y, {Min, Max}) ->
+check_range(X, Y, {Min, Max}) 
+  when is_integer(X), is_integer(Y) ->
     interval(Min, X, Max) andalso interval(Min, Y, Max).
 
 interval(Min, X, Max) ->
