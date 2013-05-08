@@ -91,7 +91,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
     Data = State#state.buffer++Data0,
     try xmerl_scan:string(Data) of
 	{Element, Tail} ->
-	    case handle_xml(Element, State) of
+	    try handle_xml(Element, State) of
 		{ok, State1} ->
 		    {noreply, rec(State1#state{buffer = Tail})};
 		{ok, State1, Msg} ->
@@ -103,6 +103,17 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
+		    ?DBG("stopping: ~p~nmsg: ~p", [Reason, Msg]),
+		    {stop, Reason, State}
+	    catch 
+		error:{stop, Reason, State = #state{}} ->
+		    gen_tcp:close(State#state.socket),
+		    ?DBG("stopping: ~p", [Reason]),
+		    {stop, Reason, State};
+		error:{stop, Reason, Msg} ->
+		    gen_tcp:send(State#state.socket, Msg),
+		    gen_tcp:close(State#state.socket),
+		    ?DBG("stopping: ~p~nmsg: ~p", [Reason, Msg]),
 		    {stop, Reason, State}
 	    end
     catch
