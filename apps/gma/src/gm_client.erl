@@ -157,6 +157,9 @@ handle_xml(E, State) ->
     ?DBG("~p", [{E, State}]),
     Type = gav(type, E),
     case Type of
+	"error" ->
+	    ?DBG("got error, finishing."),
+	    {stop, normal, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
 	"beginGame" ->
