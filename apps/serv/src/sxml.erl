@@ -192,7 +192,9 @@ game_over(Id, {Winner, Loser}, GS) ->
 			{gameState, [], []};
 		    {X, Y} ->
 			Tac = {tac, [{x, X}, {y, Y}], []},
-			{gameState, [], [Tac]}
+			{gameState, [], [Tac]};
+		    _Xml ->
+			_Xml
 		end,
     Msg = {message, [{type, gameState}], [GameId, GO, GameState]},
     msg(Msg).
