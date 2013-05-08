@@ -127,6 +127,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 					{noreply, State1#state{buffer=Tail}};
 				{ok, State1, Msg} ->      % the case when player has to answer
 					gen_tcp:send(State#state.socket,Msg),
+					?DBG("gameid: ~p", [State1#state.gameId]),
 					{noreply, State1#state{buffer=Tail}};
 				{stop, Reason, Msg} ->    % error
 					gen_tcp:send(State#state.socket,Msg),
@@ -146,8 +147,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		ErrType:ErrMsg ->
 			?DBG("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
 			{noreply,State#state{buffer = Data}}
-	end,
-	{noreply, State};
+	end;
 handle_info({tcp_closed, _Socket}, State) ->
 	?DBG("TCP connection closed.~n", []),
 	{stop, normal, State};
@@ -226,7 +226,7 @@ getPlayers(List) ->
 
 %% Handling incoming messages.
 handle_xml(E, State) ->
-	?DBG("Got xml: ~n~p", [E]),
+	?DBG("gameid: ~p~n, Got xml: ~n~p", [State#state.gameId, E]),
 	case gav(type, E) of
 		"error" ->
 			msgInfo(error,State),
@@ -280,29 +280,29 @@ handle_xml(E, State) ->
 							?DBG("first move, me!", []),
 							Move = make_move(State#state.positions),
 							State1 = State#state{gameId=gav(id, GameIdTag)},
-							io:fwrite("I have gameId ~p~n", [State1#state.gameId]),
+							?DBG("I have gameId ~p~n", [State1#state.gameId]),
 							{ok, State1, ticMsg(Move,State1#state.gameId)};
 						{false, _NotMe} ->
 							?DBG("first move, not me :(", []),
 							State1 = State#state{gameId=gav(id, GameIdTag)},
-							io:fwrite("I have gameId ~p~n", [State1#state.gameId]),
+							?DBG("I have gameId ~p~n", [State1#state.gameId]),
 							{ok, State1};
 						{E5, Me} ->
 							?DBG("my move", []),
 							X = gav(x, E5),
 							Y = gav(y, E5),
 							?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
-							ets:insert_new(State#state.positions, {{X,Y},tac}),
+							true = ets:insert_new(State#state.positions, {{X,Y},os}),
 							Move = make_move(State#state.positions),
-							io:fwrite("I have gameId ~p~n", [State#state.gameId]),
+							?DBG("I have gameId ~p~n", [State#state.gameId]),
 							{ok, State, ticMsg(Move,State#state.gameId)};
 						{E5, _NotMe} ->
 							?DBG("his move", []),
 							X = gav(x, E5),
 							Y = gav(y, E5),
 							?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
-							ets:insert_new(State#state.positions, {{X,Y},tac}),
-							io:fwrite("I have gameId ~p~n", [State#state.gameId]),
+							ets:insert_new(State#state.positions, {{X,Y},xs}),
+							?DBG("I have gameId ~p~n", [State#state.gameId]),
 							{ok, State}
 					end
 			end;
@@ -347,7 +347,7 @@ ticMsg({X,Y},GameId) ->
 
 %% Generates exemplary "error" message
 errorMsg(Nick) ->
-	Error = io_lib:fwrite("Player ~p received error.", Nick),
+	Error = io_lib:fwrite("Player ~p received error.", [Nick]),
 	Msg = {message, [{type, "error"}], [Error]},
 	msg(Msg).
 
@@ -390,11 +390,11 @@ msgInfo(Msg,State) ->
 	?DBG("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
 
 make_move(Positions) ->
-	X = crypto:rand_uniform(0,21),
-	Y = crypto:rand_uniform(0,21),
+	X = crypto:rand_uniform(0,20),
+	Y = crypto:rand_uniform(0,20),
 	Found = ets:lookup(Positions, {X,Y}),
 	if Found == [] ->
-			ets:insert_new(Positions, {{X,Y},tic}),
+			%% ets:insert_new(Positions, {{X,Y},tic}),
 			{X,Y};
 		true ->
 			make_move(Positions)
