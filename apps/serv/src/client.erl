@@ -142,7 +142,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 rec(State) ->
-    ok = inet:setopts(State#state.socket, [{active, true}]),
+    inet:setopts(State#state.socket, [{active, true}]),
     State.
 
 %% this function handles Players's specific part of XML protocol. 
