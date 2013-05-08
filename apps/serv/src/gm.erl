@@ -87,7 +87,7 @@ handle_cast(Msg, State) ->
 
 handle_info({tcp, _Socket, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
-    ?D("got data: ~p", [Data0]),
+    ?DBG("got data: ~p", [Data0]),
     Data = State#state.buffer++Data0,
     try xmerl_scan:string(Data) of
 	{Element, Tail} ->
@@ -99,11 +99,12 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		    {noreply, rec(State1#state{buffer = Tail})};
 		{stop, Reason, State = #state{}} ->
 		    gen_tcp:close(State#state.socket),
+		    ?ERROR("stopping: ~p", [Reason]),
 		    {stop, Reason, State};
 		{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
-		    ?DBG("stopping: ~p~nmsg: ~p", [Reason, Msg]),
+		    ?ERROR("stopping: ~p~nmsg: ~p", [Reason, Msg]),
 		    {stop, Reason, State}
 	    catch 
 		error:{stop, Reason, State = #state{}} ->
@@ -118,7 +119,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 	    end
     catch
 	ErrType:ErrMsg ->
-	    ?D("parsing xml: ~p", [{ErrType, ErrMsg}]),
+	    ?ERROR("parsing xml failed:~n~p", [{ErrType, ErrMsg}]),
 	    {noreply, rec(State#state{buffer = Data})}
     end;
 handle_info({accept_ack, ListenerPid}, State) ->
@@ -154,7 +155,7 @@ icl(Msg) ->
 			{stop, Error::atom(), ErrorMsg::msg()} |
 			{stop, Reason::atom(), NewState::state()}. %% this one is for graceful termination
 handle_xml(E, State) ->
-    ?D("~p", [{E, State}]),
+    ?DBG("Got xml:~n~p", [{E, State}]),
     Type = gav(type, E),
     case Type of
 	"error" ->
@@ -166,10 +167,10 @@ handle_xml(E, State) ->
 	    E2 = gse(gameId, E),
 	    Nick = gav(nick, E1), 
 	    Id = gav(id, E2),
-	    ?D("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
+	    ?DBG("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
 	    {ok, State};
 	"serverShutdown" ->
-	    ?D("msg type: ~p", [Type]),
+	    ?DBG("msg type: ~p", [Type]),
 	    {ok, State};
 	"gameState" ->
 	    GameIdTag = gse(gameId, E),
@@ -202,7 +203,6 @@ handle_xml(E, State) ->
 	    login(Nick, GameType, PlayersMin, PlayersMax, State);
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
-	    ?D(ErrMsg, []),
 	    ?ERROR(ErrMsg, []),
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.
