@@ -20,8 +20,8 @@
 %% note that all requrements from app.src file should be started 
 %% before calling application:start(serv).
 start(_StartType, _StartArgs) ->
-    games_sup:start_link().
+    gma_sup:start_link().
 
 stop(_State) ->
-    games_sup:stop().
+    gma_sup:stop().
 
