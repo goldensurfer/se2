@@ -280,29 +280,29 @@ handle_xml(E, State) ->
 							?DBG("first move, me!", []),
 							Move = make_move(State#state.positions),
 							State1 = State#state{gameId=gav(id, GameIdTag)},
-							?DBG("I have gameId ~p~n", [State1#state.gameId]),
+							%% ?DBG("I have gameId ~p", [State1#state.gameId]),
 							{ok, State1, ticMsg(Move,State1#state.gameId)};
 						{false, _NotMe} ->
 							?DBG("first move, not me :(", []),
 							State1 = State#state{gameId=gav(id, GameIdTag)},
-							?DBG("I have gameId ~p~n", [State1#state.gameId]),
+							%% ?DBG("I have gameId ~p", [State1#state.gameId]),
 							{ok, State1};
 						{E5, Me} ->
 							?DBG("my move", []),
 							X = gav(x, E5),
 							Y = gav(y, E5),
-							?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
-							true = ets:insert_new(State#state.positions, {{X,Y},os}),
+							?DBG("Last move: tac, x=~p, y=~p",[X,Y]),
+							note_move(X, Y, os, State),
 							Move = make_move(State#state.positions),
-							?DBG("I have gameId ~p~n", [State#state.gameId]),
+							%% ?DBG("I have gameId ~p", [State#state.gameId]),
 							{ok, State, ticMsg(Move,State#state.gameId)};
 						{E5, _NotMe} ->
 							?DBG("his move", []),
 							X = gav(x, E5),
 							Y = gav(y, E5),
-							?DBG("Last move: tac, x=~p, y=~p~n",[X,Y]),
-							ets:insert_new(State#state.positions, {{X,Y},xs}),
-							?DBG("I have gameId ~p~n", [State#state.gameId]),
+							?DBG("Last move: tac, x=~p, y=~p",[X,Y]),
+							note_move(X, Y, xs, State),
+							%% ?DBG("I have gameId ~p", [State#state.gameId]),
 							{ok, State}
 					end
 			end;
@@ -387,15 +387,29 @@ testPlayerLogin() ->
 
 %% Displays information what message was received and from whom.
 msgInfo(Msg,State) ->
-	?DBG("Received ~p from server ~p, gameId:~p~n", [Msg,State#state.address,State#state.gameId]).
+	%% ?DBG("Received ~p from server ~p, gameId:~p", [Msg,State#state.address,State#state.gameId]).
+    ok.
+
+note_move(X, Y, Who, #state{positions = Tid}) 
+  when is_integer(X), is_integer(Y) ->
+    true = ets:insert_new(Tid, {{X,Y}, Who});
+note_move(X, Y, Who, State) 
+  when is_list(X), is_list(Y) ->
+    note_move(list_to_integer(X), list_to_integer(Y), Who, State).
+    
 
 make_move(Positions) ->
+    {Retries, Move} = make_move0(Positions, 0),
+    ?DBG("~p retries", [Retries]),
+    Move.
+
+make_move0(Positions, N0) ->
+    N = N0 + 1,
 	X = crypto:rand_uniform(0,20),
 	Y = crypto:rand_uniform(0,20),
-	Found = ets:lookup(Positions, {X,Y}),
-	if Found == [] ->
-			%% ets:insert_new(Positions, {{X,Y},tic}),
-			{X,Y};
-		true ->
-			make_move(Positions)
+	case ets:lookup(Positions, {X,Y}) of
+	    [] ->
+		{N, {X,Y}};
+	    _ ->
+		make_move0(Positions, N)
 	end.
