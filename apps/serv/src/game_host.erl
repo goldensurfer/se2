@@ -82,3 +82,8 @@ create_game(GMPid, GameType, ListOfPlayers) ->
     [ client:join_game(Pid, GameType, GamePid, GameId) || 
 	{Pid, _Nick} <- ListOfPlayers ].
 
+is_champ() ->
+    championship =:= application:get_env(serv, mode).
+
+invites() ->
+    application:get_env(serv, invites).

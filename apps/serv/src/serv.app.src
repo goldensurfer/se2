@@ -13,6 +13,8 @@
   {mod, { serv_app, []}},
   {env, [
 	 {client_port, 1090},
-	 {gm_port, 1091}
+	 {gm_port, 1091},
+	 {mode, normal}, %% mode() :: normal | championship.
+	 {invites, 4} %% only in championship mode.
   ]}
  ]}.
