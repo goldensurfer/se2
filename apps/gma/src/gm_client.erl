@@ -199,7 +199,8 @@ validate_game_id(GameId) ->
     case gproc:where({n, l, {game, GameId}}) of
 	Pid when is_pid(Pid) ->
 	    Pid;
-	_ ->
+	Else ->
+	    ?ERROR("validate_game_id: lookup returned ~p", [Else]),
 	    T = "game with gameId = ~p does not exist",
 	    Msg = io_lib:fwrite(T, [GameId]),
 	    erlang:error({stop, wrong_game_id, sxml:error(Msg)})
