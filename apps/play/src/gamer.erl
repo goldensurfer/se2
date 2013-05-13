@@ -14,11 +14,11 @@
 	code_change/3]).
 
 %% for communication testing
--export([testThankYou/0,
-	testLeaveGame/0,
-	testLogout/0,
-	%testError/0,
-	testPlayerLogin/0]).
+%-export([testThankYou/0,
+%	testLeaveGame/0,
+%	testLogout/0,
+%	%testError/0,
+%	testPlayerLogin/0]).
 
 -record(state, {address,
 		port,
@@ -268,7 +268,8 @@ handle_xml(E, State) ->
 					Players = getPlayers(Content),
 					Players1 = lists:foldl(fun(Elem, Result) -> [{gav(nick,Elem),gav(result, Elem)}|Result] end, [],Players),
 					lists:foreach(fun({Nick,Result}) -> ?DBG("Player ~p is a ~p.~n",[Nick,Result]) end, Players1),
-					{ok,State, thankYouMsg()};
+                                        true = ets:delete_all_objects(State#state.positions),
+					{ok,State, thankYouMsg(State#state.gameId)};
 				{E2, false} ->
 					Nick = gav(nick, E2),
 					E4 = gse(gameState, E),
@@ -323,13 +324,13 @@ handle_xml(E, State) ->
 %%% ==============================================================================================
 
 %% Generates "Thank you" message
-thankYouMsg() ->
-	Msg = {message, [{type, "thank you"}], [{gameId, [{id, "5-in-line-tic-tac-toe"}], []}] },
+thankYouMsg(GameId) ->
+	Msg = {message, [{type, "thank you"}], [{gameId, [{id, GameId}], []}] },
 	msg(Msg).
 
 %% Generates "leaveGame" message
-leaveGameMsg()->
-	Msg = {message, [{type,"leaveGame"}], [{gameId, [{id, "e-in-line-tic-tac-toe"}], []}]},
+leaveGameMsg(GameId)->
+	Msg = {message, [{type,"leaveGame"}], [{gameId, [{id, GameId}], []}]},
 	msg(Msg).
 
 %% Generates "logout" message
@@ -352,34 +353,34 @@ errorMsg(Nick) ->
 	msg(Msg).
 
 %% Generates exemplary "playerLogin" message - used for testing
-playerLoginMsg() ->
-	Msg = {message, [{type, "playerLogin"}], [{playerLogin, [{nick,"pawelMichna"},{gameType,"5-in-line-tic-tac-toe"}], []}]},
-	msg(Msg).
+%playerLoginMsg() ->
+%	Msg = {message, [{type, "playerLogin"}], [{playerLogin, [{nick,"pawelMichna"},{gameType,"5-in-line-tic-tac-toe"}], []}]},
+%	msg(Msg).
 
 
 
 %%%====================================================
 %%% Functions for testing sending messages to a server
 %%% ===================================================
-testThankYou() ->
-	gen_server:cast(gamer, thankYouMsg()).
-
-testLeaveGame() ->
-	gen_server:cast(gamer, leaveGameMsg()).
-
-testLogout() ->
-	gen_server:cast(gamer, logoutMsg()).
-
-%testTic() ->
-%	gen_server:cast(gamer, ticMsg()).
-
-%testError() ->
-%	gen_server:cast(gamer, errorMsg()).
-
-testPlayerLogin() ->
-	gen_server:cast(gamer, playerLoginMsg()).
-
-
+%%testThankYou() ->
+%%	gen_server:cast(gamer, thankYouMsg()).
+%%
+%%testLeaveGame() ->
+%%	gen_server:cast(gamer, leaveGameMsg()).
+%%
+%%testLogout() ->
+%%	gen_server:cast(gamer, logoutMsg()).
+%%
+%%%testTic() ->
+%%%	gen_server:cast(gamer, ticMsg()).
+%%
+%%%testError() ->
+%%%	gen_server:cast(gamer, errorMsg()).
+%%
+%%testPlayerLogin() ->
+%%	gen_server:cast(gamer, playerLoginMsg()).
+%%
+%%
 
 %%%===============================================================
 %%% Helper functions
