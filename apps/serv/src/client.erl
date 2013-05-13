@@ -157,10 +157,9 @@ handle_xml(E, State) ->
     ?DBG("msg type: ~p", [Type]),
     case Type of
 	"logout" ->
-	    ?DBG("msg type: ~p", [Type]),
 	    {ok, State};
 	"error" ->
-	    ?DBG("GOT ERROR:~n~p", [E]),
+	    ?WARNING("GOT ERROR:~n~p", [E]),
 	    {stop, {received_error, E}, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};
@@ -168,14 +167,14 @@ handle_xml(E, State) ->
 	    E1 = gse(playerLogin, E),
 	    Nick = gav(nick, E1), 
 	    GameType = gav(gameType, E1),
-	    ?DBG("msg type ~p, nick ~p, gametype ~p", 
-		 [Type, Nick, GameType]),
+	    ?NOTICE("msg type ~p, nick ~p, gametype ~p", 
+		    [Type, Nick, GameType]),
 	    login(Nick, GameType, State);
 	"move" ->
 	    E1 = gse(gameId, E), 
 	    MoveEl = gse(move, E),
 	    TheId = gav(id, E1),
-	    ?DBG("msg type: ~p, id: ~p", [Type, TheId]),
+	    ?INFO("msg type: ~p, id: ~p", [Type, TheId]),
 	    case gproc:where({n, l, {room, TheId}}) of
 		Pid when is_pid(Pid) ->
 		    room:to_gm(Pid, sxml:move(TheId, MoveEl)),
@@ -189,16 +188,15 @@ handle_xml(E, State) ->
 	"leaveGame" ->
 	    E1 = gse(gameId, E),
 	    TheId = gav(id, E1),
-	    ?DBG("msg type: ~p, id: ~p", [Type, TheId]),
+	    ?NOTICE("msg type: ~p, id: ~p", [Type, TheId]),
 	    {ok, State};
 	"thank you" ->
 	    E1 = gse(gameId, E),
 	    TheId = gav(id, E1),
-	    ?DBG("msg type: ~p, id: ~p", [Type, TheId]),
+	    ?NOTICE("msg type: ~p, id: ~p", [Type, TheId]),
 	    {ok, State};
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),
-	    ?DBG(ErrMsg, []),
 	    ?ERROR(ErrMsg, []),
 	    {stop, unknown_xml_message_type, ErrMsg}
     end.

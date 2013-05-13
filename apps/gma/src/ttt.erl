@@ -85,8 +85,8 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 			    Winner = player(other(Who), State),
 			    WL = {Winner, player(Who, State)},
 			    gm_client:game_over(?s.id, WL, {X, Y}),
-			    ?DBG("game over: ~p won via 5 in line~n~p~n~p", 
-				 [Winner, History, Board]),
+			    ?NOTICE("game over: ~p won via 5 in line~n~p~n~p", 
+				    [Winner, History, Board]),
 			    {stop, normal, State};
 			false ->
 			    Other = other(Who),
@@ -100,8 +100,8 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 		    Winner = player(other(Who), State),
 		    Loser = player(Who, State),
 		    WL = {Winner, Loser},
-		    ?DBG("game over: ~p won via move ~p to occupied position by ~p where ~p~n~p~n~p", 
-			 [Winner, {{X, Y}, Who}, Loser, Pos, History, Board]),
+		    ?NOTICE("game over: ~p won via move ~p to occupied position by ~p where ~p~n~p~n~p", 
+			    [Winner, {{X, Y}, Who}, Loser, Pos, History, Board]),
 		    gm_client:game_over(?s.id, WL, {X, Y}),
 		    {stop, normal, State}
 	    end;
@@ -109,8 +109,8 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 	    Winner = player(other(Who), State),
 	    Loser = player(Who, State),
 	    WL = {Winner, Loser},
-	    ?DBG("game over: ~p won via move outside the boundaries by ~p~n~p~n~p", 
-		 [Winner, Loser, History, Board]),
+	    ?NOTICE("game over: ~p won via move outside the boundaries by ~p~n~p~n~p", 
+		    [Winner, Loser, History, Board]),
 	    gm_client:game_over(?s.id, WL, {X, Y}),
 	    {stop, normal, State}
     end;

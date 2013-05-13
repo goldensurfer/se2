@@ -96,8 +96,8 @@ handle_call({next_player, Id, Player, GS}, _From, State) ->
     gen_tcp:send(?s.socket, sxml:msg(Msg)),
     {reply, ok, State};
 handle_call({game_over, Id, {Winner, Loser}, GS}, _From, State) ->
-    ?DBG("game over: ~p", [{Id, {Winner, Loser}, GS}]),
-    timer:sleep(1000),
+    ?NOTICE("game over: ~p", [{Id, {Winner, Loser}, GS}]),
+    %% timer:sleep(1000),
     gen_tcp:send(?s.socket, sxml:game_over(Id, {Winner, Loser}, GS)),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
@@ -158,7 +158,7 @@ handle_xml(E, State) ->
     Type = gav(type, E),
     case Type of
 	"error" ->
-	    ?DBG("got error, finishing."),
+	    ?WARNING("got error, finishing."),
 	    {stop, normal, State};
 	"ping" ->
 	    {ok, State, sxml:pong()};

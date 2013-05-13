@@ -109,12 +109,12 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 	    catch 
 		error:{stop, Reason, State = #state{}} ->
 		    gen_tcp:close(State#state.socket),
-		    ?DBG("stopping: ~p", [Reason]),
+		    ?ERROR("stopping: ~p", [Reason]),
 		    {stop, Reason, State};
 		error:{stop, Reason, Msg} ->
 		    gen_tcp:send(State#state.socket, Msg),
 		    gen_tcp:close(State#state.socket),
-		    ?DBG("stopping: ~p~nmsg: ~p", [Reason, Msg]),
+		    ?ERROR("stopping: ~p~nmsg: ~p", [Reason, Msg]),
 		    {stop, Reason, State}
 	    end
     catch
@@ -167,10 +167,10 @@ handle_xml(E, State) ->
 	    E2 = gse(gameId, E),
 	    Nick = gav(nick, E1), 
 	    Id = gav(id, E2),
-	    ?DBG("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
+	    ?WARNING("msg type: ~p, nick: ~p, id: ~p", [Type, Nick, Id]),
 	    {ok, State};
 	"serverShutdown" ->
-	    ?DBG("msg type: ~p", [Type]),
+	    ?CRITICAL("msg type: ~p", [Type]),
 	    {ok, State};
 	"gameState" ->
 	    GameIdTag = gse(gameId, E),
@@ -185,8 +185,8 @@ handle_xml(E, State) ->
 		    {ok, State};
 		{_, E2} ->
 		    Players = sxml:gsen(player, E2, 2),
-		    ?DBG("msg type: ~p/gameOver, gameId: ~p, ~nplayers: ~p~nGS:~p", 
-		       [Type, GameId, Players, GS]),
+		    ?INFO("msg type: ~p/gameOver, gameId: ~p, ~nplayers: ~p~nGS:~p", 
+			  [Type, GameId, Players, GS]),
 		    WL = get_winner_loser(Players),
 		    room:publish(Pid, sxml:game_over(GameId, WL, GS)),
 		    {ok, State}
