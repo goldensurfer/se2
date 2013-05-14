@@ -250,7 +250,7 @@ login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = unde
     case gp:reg(n, {gm, GameType}, true) of
 	true ->
 	    gproc:mreg(p, l, [{{gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}}]),
-	    game_host:check(GameType),
+	    game_host:check_game(GameType),
 	    {ok, ?s{state = registered}, sxml:login_response()};
 	false ->
     	    {stop, already_registered, sxml:login_response(gm_already_registered)}

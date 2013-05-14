@@ -17,7 +17,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join_game/4, send/2]).
+-export([start_link/4, join_game/4, join_ch_game/4, join_championship/2, send/2]).
 
 -export([t/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
@@ -54,10 +54,16 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
     gen_server:start_link(?MODULE, [ListenerPid, Socket, Transport, Opts], []).
 
 send(Pid, Msg) ->
-    gen_server:cast(Pid, Msg).
+    gen_server:cast(Pid, {send, Msg}).
 
 join_game(Pid, GameType, GamePid, GameId) ->
     gen_server:cast(Pid, {join_game, GameType, GamePid, GameId}).
+
+join_ch_game(Pid, GameType, GamePid, GameId) ->
+    gen_server:cast(Pid, {join_ch_game, GameType, GamePid, GameId}).
+
+join_championship(Pid, GameType) ->
+    gen_server:cast(Pid, {join_championship, GameType}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -74,7 +80,9 @@ init([ListenerPid, Socket, Transport, _Opts = []]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({join_game, GameType, GamePid, _GameId}, State) ->
+handle_cast({join_game, GameType, GamePid, _GameId} = Msg, 
+	    State = #state{pl_state = registered}) ->
+    ?INFO("join_game ~p", [Msg]),
     gproc:munreg(p, l, [{registered_for_game, GameType}, {registered}]),
     case room:join(GamePid, ?s.nick) of
 	true ->
@@ -84,11 +92,23 @@ handle_cast({join_game, GameType, GamePid, _GameId}, State) ->
 			     {{registered}, GameType}]),
 	    {noreply, State}
     end;
-handle_cast(Msg, State) ->
+handle_cast({join_ch_game, GameType, GamePid, _GameId} = Msg, 
+	    State = #state{pl_state = tournament}) ->
+    ?INFO("join_game ~p", [Msg]),
+    case room:join(GamePid, ?s.nick) of
+	true ->
+	    {noreply, State#state{pl_state = playing}};
+	{error, _} ->
+	    {noreply, State}
+    end;
+handle_cast({join_championship, GameType}, State = #state{pl_state = registered}) ->
+    gproc:munreg(p, l, [{registered_for_game, GameType}, {registered}]),
+    {noreply, State#state{pl_state = tournament}};
+handle_cast({send, Msg}, State) ->
     gen_tcp:send(State#state.socket, Msg),
-    {noreply, State}.
-%% handle_cast(Msg, State) ->
-%%     {stop, {odd_cast, Msg}, State}.
+    {noreply, State};
+handle_cast(Msg, State) ->
+    {stop, {odd_cast, Msg}, State}.
 
 handle_info({tcp, _Socket, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),

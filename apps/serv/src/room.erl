@@ -11,13 +11,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join/2, publish/2, to_gm/2]).
+-export([start_link/4, join/2, publish/2, to_gm/2, end_game/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
 -include_lib("serv/include/logging.hrl").
+-include_lib("serv/include/se2.hrl").
 
 -define(SERVER, ?MODULE). 
 
@@ -25,15 +26,16 @@
 
 -record(state, {
 	  timer,
-	  id :: any(),
-	  type :: any(),
+	  id :: game_id(),
+	  type :: binary(),
 	  gm :: pid(),
 	  gm_ref :: reference(),
-	  players = [] :: [{pid(), binary()}],
-	  target = [] :: [{pid(), binary()}],
+	  players = [] :: [player()],
+	  target = [] :: [player()],
 	  captured = [] :: [{pid(), tag()}],
 	  playing = false
 	 }).
+
 -define(s, State#state).
 
 %%%===================================================================
@@ -60,7 +62,7 @@ end_game(Pid, WL) ->
 %%%===================================================================
 
 init([GameId, GameType, GMPid, Players]) ->
-    ?INFO("starting room", []),
+    ?INFO("starting room for ~p", [Players]),
     {ok, TRef} = timer:send_after(1000, players_too_slow),
     {ok, #state{timer = TRef, id = GameId, type = GameType,
 		gm = GMPid, target = Players,
@@ -96,8 +98,8 @@ handle_call({to_gm, Msg}, _From, State) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({game_ended, {_Winner, _Loser}}, State) ->
-    game_host:game_ended(self(), GameId, WL),
+handle_cast({game_ended, {_Winner, _Loser} = WL}, State) ->
+    game_host:game_ended(self(), ?s.id, WL),
     {stop, normal, State};
 
 handle_cast(_Msg, State) ->
@@ -106,7 +108,7 @@ handle_cast(_Msg, State) ->
 handle_info(players_too_slow, State = #state{playing = false}) ->
     ?INFO("players are too slow, shutting room down", []),
     [ gen_server:reply(Client, {error, someone_was_too_slow}) || Client <- ?s.captured ],
-    game_host:game_ended(?s.game_id, nc),
+    game_host:game_ended(?s.id, nc),
     {stop, normal, State};
 handle_info(players_too_slow, State) ->
     {noreply, State};

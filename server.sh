@@ -12,7 +12,7 @@ if [ $# -lt 2 ] ; then
 fi
 
 if [ $# -eq 5 ] ; then
-    erl $OPTS_COMMON -eval "serv:start_championship($5, $2)."
+    erl $OPTS_COMMON -eval "serv:start_championship($5, $3)."
 fi
 if [ $# -eq 2 ] ; then
     erl $OPTS_COMMON -eval "serv:start_normal($2)."
