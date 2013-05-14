@@ -236,7 +236,7 @@ getPlayers(List) ->
 
 %% Handling incoming messages.
 handle_xml(E, State) ->
-	?DBG("gameid: ~p~n, Got xml: ~n~p", [State#state.gameId, E]),
+	%?DBG("gameid: ~p~n, Got xml: ~n~p", [State#state.gameId, E]),
 	case gav(type, E) of
 		"error" ->
 			msgInfo(error,State),
@@ -306,6 +306,8 @@ handle_xml(E, State) ->
 							note_move(X, Y, os, State),
 							Move = make_move(State#state.positions),
 							%% ?DBG("I have gameId ~p", [State#state.gameId]),
+							{MyX, MyY} = Move,
+							?DBG("I undersigned, ~p made the following move: x = ~p, y = ~p", [State#state.nick, MyX, MyY]),
 							{ok, State, ticMsg(Move,State#state.gameId)};
 						{E5, _NotMe} ->
 							?DBG("his move", []),
