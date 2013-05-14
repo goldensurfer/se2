@@ -3,7 +3,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3]).
+-export([start_link/3,
+        logout/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -48,6 +49,9 @@
 start_link(Address, Port, Nick) ->
 	gen_server:start_link({local,?MODULE}, ?MODULE, [Address, Port, Nick], []).
 
+logout() ->
+        gen_server:cast(gamer, logout).
+        
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -101,6 +105,12 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast(logout, State) ->
+        Msg = msg({message, [{type, "logout"}], []}),
+        gen_tcp:send(State#state.socket, Msg),
+        gen_tcp:close(State#state.socket),
+        {noreply, State};
+
 handle_cast(Msg, State) ->
 	gen_tcp:send(State#state.socket, Msg),
 	{noreply, State}.
