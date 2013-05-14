@@ -36,11 +36,10 @@ start_link() ->
 init([]) ->
     RoomSup = ?CHILD(room_sup, supervisor),
     Host = ?CHILD(game_host, worker),
-    N = application:get_env(serv, invites),
     CW = case application:get_env(serv, mode) of
-	     championship -> 
-		 [?CHILD(champ, worker, [N])];
-	     normal ->
+	     {ok, championship} -> 
+		 [?CHILD(champ, worker, [])];
+	     {ok, normal} ->
 		 []
 	 end,
     {ok, { {one_for_one, 5, 10}, [RoomSup, Host] ++ CW} }.

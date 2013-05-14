@@ -1,1 +1,3 @@
 -define(MAGIC, "5-in-line-tic-tac-toe").
+-type game_id() :: binary().
+-type nick() :: binary().

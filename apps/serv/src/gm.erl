@@ -189,6 +189,7 @@ handle_xml(E, State) ->
 			  [Type, GameId, Players, GS]),
 		    WL = get_winner_loser(Players),
 		    room:publish(Pid, sxml:game_over(GameId, WL, GS)),
+		    room:end_game(Pid, WL),
 		    {ok, State}
 	    end;
 	"gameMasterLogin" ->
@@ -249,6 +250,7 @@ login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = unde
     case gp:reg(n, {gm, GameType}, true) of
 	true ->
 	    gproc:mreg(p, l, [{{gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}}]),
+	    game_host:check(GameType),
 	    {ok, ?s{state = registered}, sxml:login_response()};
 	false ->
     	    {stop, already_registered, sxml:login_response(gm_already_registered)}

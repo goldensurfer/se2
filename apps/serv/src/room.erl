@@ -52,6 +52,9 @@ publish(Pid, Msg) ->
 to_gm(Pid, Msg) ->
     gen_server:call(Pid, {to_gm, Msg}).
 
+end_game(Pid, WL) ->
+    gen_server:cast(Pid, {game_ended, WL}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -93,12 +96,17 @@ handle_call({to_gm, Msg}, _From, State) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
+handle_cast({game_ended, {_Winner, _Loser}}, State) ->
+    game_host:game_ended(self(), GameId, WL),
+    {stop, normal, State};
+
 handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(players_too_slow, State = #state{playing = false}) ->
     ?INFO("players are too slow, shutting room down", []),
     [ gen_server:reply(Client, {error, someone_was_too_slow}) || Client <- ?s.captured ],
+    game_host:game_ended(?s.game_id, nc),
     {stop, normal, State};
 handle_info(players_too_slow, State) ->
     {noreply, State};
