@@ -410,6 +410,24 @@ note_move(X, Y, Who, State)
   when is_list(X), is_list(Y) ->
     note_move(list_to_integer(X), list_to_integer(Y), Who, State).
     
+new_make_move(Positions, MinLeft) ->
+        FirstEmptyCell = find_first_empty_cell(Positions, 0, 0),
+        tesrte,
+        tet.
+  
+next({20, Y}) ->
+        {0, Y+1};
+next({X,Y}) ->
+        {X+1, Y}.
+
+find_first_empty_cell(Positions, X0, Y0) ->
+        case ets:member(Positions, X0, Y0) of
+                false ->
+                        {X0, Y0};
+                true ->
+                        {X1, Y1} = next({X0, Y0}),
+                        find_first_empty_cell(Positions, X1, Y1)
+        end.
 
 make_move(Positions) ->
     {Retries, Move} = make_move0(Positions, 0),
