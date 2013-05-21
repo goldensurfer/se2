@@ -410,10 +410,12 @@ note_move(X, Y, Who, State)
   when is_list(X), is_list(Y) ->
     note_move(list_to_integer(X), list_to_integer(Y), Who, State).
     
-new_make_move(Positions, MinLeft) ->
+new_make_move(Positions) ->
         FirstEmptyCell = find_first_empty_cell(Positions, 0, 0),
-        tesrte,
-        tet.
+	MinLeft = -1,
+	MyPositions = ets:select(Table, [{{'$1',xs},[],['$1']}]),
+	foreach(myfun, MyPositions).
+
   
 next({20, Y}) ->
         {0, Y+1};
