@@ -6,7 +6,7 @@
 	]},
  {lager, [
 	  {handlers, [
-		      {lager_console_backend, info},
+		      {lager_console_backend, notice},
 		      {lager_file_backend, [
 					    {"log/critical.log", critical, 10485760, "$D0", 5},
 					    {"log/error.log", error, 10485760, "$D0", 5},
