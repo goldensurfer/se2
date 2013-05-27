@@ -13,7 +13,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, check_game/1, game_ended/3, start_round/2]).
+-export([start_link/0, list/0, check_game/1, game_ended/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -30,6 +30,7 @@
 	  pending_players = [] :: list(player()),
 	  active_games = [] :: list(game()),
 	  pending_games = [] :: list(game()),
+	  finished_games = [] :: list(game()),
 	  results = ets:new(res, [])
 	 }).
 
@@ -40,14 +41,15 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+list() ->
+    gen_server:call(?SERVER, list).
+
 check_game(Game) ->
     gen_server:cast(?SERVER, {check, Game}).
 
 game_ended(RoomPid, GameId, WL) ->
     gen_server:cast(?SERVER, {game_ended, RoomPid, GameId, WL}).
 
-start_round(GMPid, GameType) ->
-    gen_server:cast(?SERVER, {start_round, GMPid, GameType}).
 
 %%%===================================================================
 %%% callbacks
@@ -58,6 +60,13 @@ init([]) ->
     true = undefined =/= Mode,
     {ok, #state{mode = Mode}}.
 
+handle_call(list, _From, State) ->
+    Reply = [{pending_games, ?s.pending_games},
+	     {active_games, ?s.active_games},
+	     {pending_players, ?s.pending_players},
+	     {finished_games, ?s.finished_games}
+	    ],
+    {reply, {ok, Reply}, State};
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
@@ -81,48 +90,49 @@ handle_cast({check, GameType}, State=#state{mode = championship,
     GM = gproc:lookup_local_properties({gm_for_game, GameType}),
     ?INFO("checking players and gms:~n~p~nrequired: ~p, actual: ~p", [{List, GM}, Required, Actual]),
     case {GM, Actual >= Required} of
-	{[{GMPid, {_Id, _, _}} | _], true} ->
-	    PLs = [ N || {_, N} <- List ],
-	    ?NOTICE("1 creating championship for players: ~p", [PLs]),
-	    {Games, Players} = create_championship(GMPid, GameType, List),
-	    ?NOTICE("2 creating championship for players: ~p", [PLs]),
-	    start_round(GMPid, GameType),
-	    ?NOTICE("3 creating championship for players: ~p", [PLs]),
-	    {noreply, State#state{pending_games = Games, pending_players = Players}};
+	{[{_GMPid, {_Id, _, _}} | _], true} ->
+	    PG = create_championship(GameType, List),
+	    self() ! start_round,
+	    {noreply, State#state{pending_games = PG, pending_players = List}};
 	_ ->
 	    {noreply, State}
     end;
 
-handle_cast({check, GameType}, State) ->
+handle_cast({check, _GameType}, State) ->
     ?WARNING("someone connected during the championship!"),
     {noreply, State};
-
-handle_cast({start_round, GMPid, GameType}, State) ->
-    ?DBG("pending games: ~p~npending players: ~p", [State#state.pending_games, State#state.pending_players]),
-    case State#state.pending_games of
-	[] -> 
-	    {noreply, State};
-	_ -> 
-	    State1 = start_round0(GMPid, GameType, State),
-	    {noreply, State1}
-    end;
 
 handle_cast({game_ended, _RoomPid, _GameId, _WL}, State = #state{mode = normal}) ->
     {noreply, State};
 
-handle_cast({game_ended, _RoomPid, _GameId, _WL}, State = #state{mode = championship}) ->
-    case lists:keytake(GameId, #room.id, State#state.active_games) of
+handle_cast({game_ended, _RoomPid, GameId, _WL}, State = #state{mode = championship}) ->
+    case lists:keytake(GameId, #game.id, State#state.active_games) of
 	false ->
 	    {stop, {error, unknown_running_game}, State};
-	{value, Room, RG1} ->
-	    PP = Room#game.players ++ State#state.pending_players,
-asdasdasdasda
-	    start_round0(),
-	    {noreply, State#state{pending_players = PP, active_games = RG1}}
+	{value, Room, AG1} ->
+	    PP = Room#game.players ++ ?s.pending_players,
+	    self() ! start_round,
+	    {noreply, ?s{finished_games = [Room | ?s.finished_games],
+			 pending_players = PP, 
+			 active_games = AG1
+			 }}
     end;
 handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
+handle_info(start_round, State=#state{pending_games=[], active_games=[]}) ->
+    ?ALERT("Championship has ended!!!~n~p", [?s.finished_games]),
+    {noreply, ?s{mode = normal}};
+handle_info(start_round, State) ->
+    ?NOTICE("active_games:~n~p~npending games: ~n~p~npending players: ~n~p", 
+	    [State#state.active_games, State#state.pending_games, State#state.pending_players]),
+    PG = ?s.pending_games,
+    PP = ?s.pending_players,
+    {AG1, PG1, PP1} = choose_games({PG, PP}),
+    AG1withPids = start_round0(AG1),
+    ?NOTICE("started games: ~p", [AG1withPids]),
+    NAG = AG1withPids ++ ?s.active_games,
+    {noreply, ?s{active_games = NAG, pending_games = PG1, pending_players = PP1}};
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.
 
@@ -136,17 +146,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-create_championship(_GMPid, GameType, List) ->
+create_championship(GameType, List) ->
     [  begin
 	   erlang:monitor(process, Pid),
 	   client:join_championship(Pid, GameType)
        end || {Pid, _Nick} <- List ],
     Games = [ #game{id = create_id(), 
+		    game_type = GameType,
 		    players = [{PidA, NickA}, {PidB, NickB}]} 
 	      || {PidA, NickA} <- List, 
 		 {PidB, NickB} <- List, 
 		 NickA < NickB ],
-    {Games, List}.
+    Games.
 
 create_game(GMPid, GameType, ListOfPlayers) ->
     GameId = create_id(),
@@ -157,6 +168,15 @@ create_game(GMPid, GameId, GameType, ListOfPlayers) ->
     [ client:join_game(Pid, GameType, GamePid, GameId) || 
 	{Pid, _Nick} <- ListOfPlayers ],
     {ok, GamePid}.
+
+start_round0(Games) ->
+    [ begin 
+	  case gproc:lookup_local_properties({gm_for_game, GT}) of
+	      [{GM, _}] ->
+		  {ok, Room} = create_ch_game(GM, GameId, GT, LOP),
+		  Game#game{room = Room}
+	  end
+      end || Game = #game{players = LOP, game_type = GT, id = GameId} <-Games].
 
 create_ch_game(GMPid, GameId, GameType, ListOfPlayers) ->
     {ok, GamePid} = room_sup:add_child(GameId, GameType, GMPid, ListOfPlayers),
@@ -173,30 +193,23 @@ invites() ->
 	{ok, I} when is_list(I) -> list_to_integer(I)
     end.
 
-start_round0(GMPid, GameType, State = #state{active_games = RG,
-					     pending_players = PP,
-					     pending_games = PG}) ->
-    ?DBG("start_round0", []),
-    F = fun(H = #game{}, {ARG, APG, APP}) -> 
+choose_games({PG, PP}) ->
+    ?DBG("choose_games0", []),
+    F = fun(H = #game{}, {AAG, APG, APP}) -> 
 		[{PidA, NickA}, {PidB, NickB}] = H#game.players,
 		?DBG("keytake ~p", [{NickA, 2, APP}]),
 		case lists:keytake(NickA, 2, APP) of
 		    false ->
 			?DBG("H: ~p, false 1", [H]),
-			{ARG, [H | APG], APP};
+			{AAG, [H | APG], APP};
 		    {value, {PidA, NickA}, APP1} ->
 			case lists:keytake(NickB, 2, APP1) of
 			    false ->
 				?DBG("H: ~p, false 2", [H]),
-				{ARG, [H | APG], APP};
+				{AAG, [H | APG], APP};
 			    {value, {PidB, NickB}, APP2} ->
-				?DBG("H: ~p, creating!!!!", [H]),
-				GameId = H#game.id,
-				{ok, RoomPid} = create_ch_game(GMPid, GameId, GameType, H#game.players),
-				H1 = H#game{room = RoomPid},
-				{[H1 | ARG], APG, APP2}
+				{[H | AAG], APG, APP2}
 			end
 		end
 	end,
-    {RG1, PG1, PP1} = lists:foldl(F, {RG, [], PP}, PG),
-    State#state{active_games = RG1, pending_players = PP1, pending_games = PG1}.
+    lists:foldl(F, {[], [], PP}, PG).

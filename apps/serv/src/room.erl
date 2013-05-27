@@ -36,8 +36,6 @@
 	  playing = false
 	 }).
 
--define(s, State#state).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -76,18 +74,18 @@ handle_call({join, {Pid, Nick}}, From,
     Captured = [From | ?s.captured],
     case Target of
 	[] ->
-	    ?INFO("starting game! ~p", [?s.id]),
+	    ?NOTICE("starting game! ~p", [?s.id]),
 	    [ gen_server:reply(Client, true) || Client <- Captured ],
 	    timer:cancel(?s.timer),
 	    Nicks = [ ANick || {_, ANick} <- Players ],
 	    gproc:reg({n, l, {room, ?s.id}}),
 	    gm:begin_game(?s.gm, ?s.id, Nicks),
-	    {noreply, State#state{playing = true, captured = [], 
-				  target = [], players = Players}};
+	    {noreply, ?s{playing = true, captured = [], 
+			 target = [], players = Players}};
 	_ ->
 	    ?INFO("need more..", []),
-	    {noreply, State#state{captured = Captured, 
-				  target = Target, players = Players}}
+	    {noreply, ?s{captured = Captured, 
+			 target = Target, players = Players}}
     end;
 handle_call({publish, Msg}, _From, State) ->
     [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
@@ -98,7 +96,9 @@ handle_call({to_gm, Msg}, _From, State) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({game_ended, {_Winner, _Loser} = WL}, State) ->
+handle_cast({game_ended, {Winner, Loser} = WL}, State) ->
+    ?NOTICE("game ~p ended. ~p has beat ~p", [?s.id, Winner, Loser]),
+    [ client:game_ended(Pid) || {Pid, _} <- ?s.players ],
     game_host:game_ended(self(), ?s.id, WL),
     {stop, normal, State};
 
@@ -106,7 +106,7 @@ handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(players_too_slow, State = #state{playing = false}) ->
-    ?INFO("players are too slow, shutting room down", []),
+    ?WARNING("players are too slow, shutting room down", []),
     [ gen_server:reply(Client, {error, someone_was_too_slow}) || Client <- ?s.captured ],
     game_host:game_ended(?s.id, nc),
     {stop, normal, State};
