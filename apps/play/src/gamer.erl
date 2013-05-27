@@ -289,7 +289,7 @@ handle_xml(E, State) ->
 					case {sxml:get_sub_element(tac, E4), Nick} of
 						{false, Me} ->
 							?DBG("first move, me!", []),
-							Move = make_move(State#state.positions),
+							Move = new_make_move(State#state.positions),
 							State1 = State#state{gameId=gav(id, GameIdTag)},
 							%% ?DBG("I have gameId ~p", [State1#state.gameId]),
 							{ok, State1, ticMsg(Move,State1#state.gameId)};
@@ -304,7 +304,7 @@ handle_xml(E, State) ->
 							Y = gav(y, E5),
 							?DBG("Last move: tac, x=~p, y=~p",[X,Y]),
 							note_move(X, Y, os, State),
-							Move = make_move(State#state.positions),
+							Move = new_make_move(State#state.positions),
 							%% ?DBG("I have gameId ~p", [State#state.gameId]),
 							{MyX, MyY} = Move,
 							?DBG("I undersigned, ~p made the following move: x = ~p, y = ~p", [State#state.nick, MyX, MyY]),
@@ -411,38 +411,109 @@ note_move(X, Y, Who, State)
     note_move(list_to_integer(X), list_to_integer(Y), Who, State).
     
 new_make_move(Positions) ->
-        FirstEmptyCell = find_first_empty_cell(Positions, 0, 0),
-	MinLeft = -1,
-	MyPositions = ets:select(Table, [{{'$1',xs},[],['$1']}]),
-	foreach(myfun, MyPositions).
+        case length(ets:tab2list(Positions)) of
+                400 ->
+                        {1,1};
+                _ ->
 
-  
-next({20, Y}) ->
-        {0, Y+1};
-next({X,Y}) ->
-        {X+1, Y}.
-
-find_first_empty_cell(Positions, X0, Y0) ->
-        case ets:member(Positions, X0, Y0) of
-                false ->
-                        {X0, Y0};
-                true ->
-                        {X1, Y1} = next({X0, Y0}),
-                        find_first_empty_cell(Positions, X1, Y1)
+                        MyPositions = [{{{'$1','$2'},xs},[],[{{'$1','$2'}}]}],
+                        case MyPositions of
+                                [] ->
+                                        random_move(Positions);
+                                _ ->
+                                        case find_empty_neighbor(Positions, MyPositions) of
+                                                {X,Y} ->
+                                                        {X,Y};
+                                                _ -> % brak pustych sasiadow
+                                                        random_move(Positions)
+                                        end
+                        end
         end.
 
+random_move(Positions) ->
+        X = crypto:rand_uniform(0,20),
+        Y = crypto:rand_uniform(0,20),
+        case ets:lookup(Positions, {X,Y}) of
+                [] ->
+                        {X,Y};
+                _ ->
+                       random_move(Positions)
+        end.
+
+
+find_empty_neighbor(Positions, MyPositions) ->
+        case MyPositions of
+                [] ->
+                        no_empty_cell_found;
+                _ ->
+                        [CurrentPoint|Rest] = MyPositions,
+                        Neighbors = find_neighbors(CurrentPoint),
+                        case get_first_empty_neighbor(Positions, Neighbors) of
+                                {X,Y} ->
+                                        {X,Y};
+                                _ ->
+                                        find_empty_neighbor(Positions,Rest)
+                        end
+        end.
+
+
+get_first_empty_neighbor(Positions, Neighbors) ->
+        case Neighbors of
+                [] ->
+                        no_empty_neighbor_found;
+                _ ->
+                        [H|T] = Neighbors,
+                        case ets:member(Positions, H) of
+                                false ->
+                                        H;
+                                _ ->
+                                        get_first_empty_neighbor(Positions,T)
+                        end
+        end.
+
+find_neighbors({X,Y}) when X == 0 ->
+        case Y of
+                0 ->
+                        [{1,0}, {1,1}, {0,1}];
+                19 ->
+                        [{0,18}, {1, 18}, {1,19}];
+                _ ->
+                        [{0,Y-1}, {1,Y-1}, {1,Y}, {1,Y+1}, {0, Y+1}]
+        end;
+find_neighbors({X,Y}) when X == 19 ->
+        case Y of
+                0 ->
+                        [{18,0}, {18,1}, {19,1}];
+                19 ->
+                        [{18, 19}, {18,18}, {19,18}];
+                _ ->
+                        [{19,Y-1}, {18,Y-1}, {18,Y}, {18,Y+1}, {19,Y+1}]
+        end;
+find_neighbors({X,Y}) when Y == 0 ->
+        [{X-1,0}, {X-1,1}, {X,1}, {X+1,1}, {X+1, 0}];
+find_neighbors({X,Y}) when Y == 19 ->
+        [{X-1,19}, {X-1,18}, {X,18}, {X+1,18}, {X+1,19}];
+find_neighbors({X,Y}) ->
+        [{X-1,Y}, {X-1,Y+1}, {X,Y+1}, {X+1,Y+1}, {X+1,Y}, {X+1,Y-1}, {X,Y-1}, {X+1,Y-1}].
+  
 make_move(Positions) ->
     {Retries, Move} = make_move0(Positions, 0),
     ?DBG("~p retries", [Retries]),
     Move.
 
 make_move0(Positions, N0) ->
-    N = N0 + 1,
-	X = crypto:rand_uniform(0,20),
-	Y = crypto:rand_uniform(0,20),
-	case ets:lookup(Positions, {X,Y}) of
-	    [] ->
-		{N, {X,Y}};
-	    _ ->
-		make_move0(Positions, N)
-	end.
+        N = N0 + 1,
+        X = crypto:rand_uniform(0,20),
+        Y = crypto:rand_uniform(0,20),
+        case length(ets:tab2list(Positions)) of
+                400 ->
+                        {N, {1,1}};
+                _ ->
+                        case ets:lookup(Positions, {X,Y}) of
+                                [] ->
+                                        {N, {X,Y}};
+                                _ ->
+                                        make_move0(Positions, N)
+                        end
+        end.
+
