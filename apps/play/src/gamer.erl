@@ -416,7 +416,7 @@ new_make_move(Positions) ->
                         {1,1};
                 _ ->
 
-                        MyPositions = [{{{'$1','$2'},xs},[],[{{'$1','$2'}}]}],
+                        MyPositions = ets:match(Positions,[{{{'$1','$2'},xs},[],[{{'$1','$2'}}]}]),
                         case MyPositions of
                                 [] ->
                                         random_move(Positions);
