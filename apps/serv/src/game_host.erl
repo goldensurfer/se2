@@ -27,6 +27,7 @@
 -type mode() :: normal | championship.
 -record(state, {
 	  mode = normal :: mode(),
+	  players = [] :: list(player()),
 	  pending_players = [] :: list(player()),
 	  active_games = [] :: list(game()),
 	  pending_games = [] :: list(game()),
@@ -93,7 +94,7 @@ handle_cast({check, GameType}, State=#state{mode = championship,
 	{[{_GMPid, {_Id, _, _}} | _], true} ->
 	    PG = create_championship(GameType, List),
 	    self() ! start_round,
-	    {noreply, State#state{pending_games = PG, pending_players = List}};
+	    {noreply, State#state{players = List, pending_games = PG, pending_players = List}};
 	_ ->
 	    {noreply, State}
     end;
