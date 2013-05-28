@@ -8,7 +8,6 @@
 	  room :: pid(),
 	  id :: game_id(),
 	  game_type :: binary(),
-	  players :: [player()],
-	  winner
+	  players :: [player()]
 	 }).
 -type game() :: #game{}.

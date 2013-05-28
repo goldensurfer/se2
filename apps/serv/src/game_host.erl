@@ -121,9 +121,6 @@ handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(start_round, State=#state{pending_games=[], active_games=[]}) ->
-    Players0 = collect_players(?s.finished_games),
-    Players1 = count_victories(?s.finished_games, Players0),
-    Players = lists:keysort(3, Players1),
     ?ALERT("Championship has ended!!!~n~p", [?s.finished_games]),
     {noreply, ?s{mode = normal}};
 handle_info(start_round, State) ->
