@@ -1,6 +1,6 @@
 #!/bin/bash
 
-OPTS_COMMON="-pa apps/*/ebin -pa deps/*/ebin -env ERL_CRASH_DUMP_SECONDS 1 -env ERL_ETS_MAX_TABLES 40000 -boot start_sasl -config serv"
+OPTS_COMMON="-pa apps/*/ebin -pa deps/*/ebin -env ERL_CRASH_DUMP_SECONDS 1 -env ERL_MAX_ETS_TABLES 400000 -boot start_sasl -config serv"
 
 usage() {
     echo usage: `basename $0` [--championship GAMETYPE NN] --port PORT
