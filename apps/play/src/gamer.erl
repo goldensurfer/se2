@@ -30,8 +30,9 @@
 		nick
 		}).
 
--define(DBG(F), io:fwrite(user, "(~p)~p:~p "++F++"~n", [self(), ?MODULE, ?LINE])).
--define(DBG(F, A), io:fwrite(user, "(~p)~p:~p "++F++"~n", [self(), ?MODULE, ?LINE]++A)).
+%-define(DBG(F), io:fwrite(user, "(~p)~p:~p "++F++"~n", [self(), ?MODULE, ?LINE])).
+%-define(DBG(F, A), io:fwrite(user, "(~p)~p:~p "++F++"~n", [self(), ?MODULE, ?LINE]++A)).
+-include_lib("serv/include/logging.hrl").
 
 -include_lib("xmerl/include/xmerl.hrl").
 
@@ -47,7 +48,10 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Address, Port, Nick) ->
+	lager:start(),
+	lager:set_loglevel(lager_console_backend, debug),
 	gen_server:start_link({local,?MODULE}, ?MODULE, [Address, Port, Nick], []).
+
 
 logout() ->
         gen_server:cast(gamer, logout).
