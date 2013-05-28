@@ -53,7 +53,7 @@ to_gm(Pid, Msg) ->
     gen_server:call(Pid, {to_gm, Msg}).
 
 end_game(Pid, WL) ->
-    gen_server:cast(Pid, {game_ended, WL}).
+    Pid ! {game_ended, WL}.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -96,19 +96,13 @@ handle_call({to_gm, Msg}, _From, State) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({game_ended, {Winner, Loser} = WL}, State) ->
-    ?NOTICE("game ~p ended. ~p has beat ~p", [?s.id, Winner, Loser]),
-    [ client:game_ended(Pid) || {Pid, _} <- ?s.players ],
-    game_host:game_ended(self(), ?s.id, WL),
-    {stop, normal, State};
-
 handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(players_too_slow, State = #state{playing = false}) ->
     ?WARNING("players are too slow, shutting room down", []),
     [ gen_server:reply(Client, {error, someone_was_too_slow}) || Client <- ?s.captured ],
-    game_host:game_ended(?s.id, nc),
+    game_host:game_ended(self(), ?s.id, undefined),
     {stop, normal, State};
 handle_info(players_too_slow, State) ->
     {noreply, State};
@@ -118,15 +112,20 @@ handle_info({'DOWN', MonRef, _Type, _Object, Info},
     Msg = sxml:error(io_lib:fwrite(MsgT, [Info])),
     [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
     {stop, {gm_crash, Info}, State};
+handle_info({game_ended, {Winner, Loser} = WL}, State) ->
+    ?NOTICE("game ~p ended. ~p has beat ~p", [?s.id, Winner, Loser]),
+    [ client:game_ended(Pid) || {Pid, _} <- ?s.players ],
+    game_host:game_ended(self(), ?s.id, WL),
+    {stop, normal, State};
 handle_info({'DOWN', _MonRef, _Type, Pid, Reason} = Info, State) ->
     case lists:keyfind(Pid, 1, ?s.players) of
-	{Pid, Nick} ->
-	    MsgT = "Player ~p has crashed with msg: ~p",
-	    Msg = sxml:error(io_lib:fwrite(MsgT, [Nick, Info])),
-	    [ client:send(APid, Msg) || {APid, _} <- ?s.players ],
-	    {stop, {player_crashed, Reason}, State};
+	{Pid, Loser} ->
+	    MsgT = "Player ~p has crashed with reason: ~p",
+	    ?WARNING(MsgT, [Loser, Reason]),
+	    [{_, Winner}] = ?s.players -- [{Pid, Loser}],
+	    handle_info({game_ended, {Winner, Loser}}, State);
 	false ->
-	    {stop, {odd_info, Info}, State}
+	    {stop, {odd_down, Info}, State}
     end;
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.

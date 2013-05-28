@@ -156,7 +156,7 @@ icl(Msg) ->
 			{stop, Error::atom(), ErrorMsg::msg()} |
 			{stop, Reason::atom(), NewState::state()}. %% this one is for graceful termination
 handle_xml(E, State) ->
-    ?DBG("Got xml:~n~p", [{E, State}]),
+    %% ?DBG("Got xml:~n~p", [{E, State}]),
     Type = gav(type, E),
     case Type of
 	"error" ->

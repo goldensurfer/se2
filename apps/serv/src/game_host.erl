@@ -124,11 +124,11 @@ handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(start_round, State=#state{pending_games=[], active_games=[]}) ->
-    Players0 = collect_players(?s.finished_games),
+    Players0 = get_nicks(State),
     Players1 = count_victories(Players0, ?s.finished_games),
     Players = lists:keysort(2, Players1),
     ResultXml = sxml:champions_list(Players),
-    Clients = get_all_clients(?s.finished_games),
+    Clients = ?s.players,
     ?ALERT("~n~nClients: ~p~n~n", [Clients]),
 
     ?ALERT("Championship has ended!!!~n~p~n~p", [Players, ?s.finished_games]),
@@ -144,6 +144,20 @@ handle_info(start_round, State) ->
     ?NOTICE("started games: ~p", [AG1withPids]),
     NAG = AG1withPids ++ ?s.active_games,
     {noreply, ?s{active_games = NAG, pending_games = PG1, pending_players = PP1}};
+handle_info({'DOWN', _MonRef, _Type, Pid, _Reason} = Info, State) ->
+    case lists:keyfind(Pid, 1, ?s.players) of
+	false ->
+	    {stop, {error, bad_down_message, Info}, State};
+	{Pid, Loser} ->
+	    F = fun(Game) -> is_in_game(Pid, Game) end,
+	    {Decided0, Left} = lists:partition(F, ?s.pending_games),
+	    ?ALERT("~npending games: ~p~n", [?s.pending_games]),
+	    ?ALERT("~nDecided0: ~p~n", [Decided0]),
+	    ?ALERT("~nLeft: ~p~n", [Left]),
+	    Decided = [ G#game{winner = other(Pid, G#game.players), loser = Loser} 
+			|| G <- Decided0 ],
+	    {noreply, ?s{pending_games = Left, finished_games = Decided ++ ?s.finished_games}}
+    end;
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.
 
@@ -225,17 +239,11 @@ choose_games({PG, PP}) ->
 	end,
     lists:foldl(F, {[], [], PP}, PG).
 
-collect_players(Games) ->
-    Pairs = [ {Nick1, Nick2} || #game{players=[{_, Nick1}, {_, Nick2}]} <- Games ],
-    {A, B} = lists:unzip(Pairs),
-    lists:usort(A++B).
+get_nicks(#state{players = L}) ->
+    [ Nick || {_Pid, Nick} <- L ].
 
-get_all_clients(Games) ->
-    Pairs = [ Players || #game{players = Players} <- Games ],
-    lists:usort(lists:flatten(Pairs)).
-
-count_victories(Players0, Games) ->
-    Players1 = [ {Nick, 0} || Nick <- Players0 ],
+count_victories(Nicks, Games) ->
+    Players1 = [ {Nick, 0} || Nick <- Nicks],
     Won0 = dict:from_list(Players1),
     Lost0 = dict:from_list(Players1),
     FW = fun(Game, Dict) ->
@@ -248,4 +256,17 @@ count_victories(Players0, Games) ->
     Lost1 = lists:sort(dict:to_list(lists:foldl(FL, Lost0, Games))),
     Res0 = [ {Nick, Won, Lost} || {{Nick, Won}, {Nick, Lost}} <- lists:zip(Won1, Lost1)],
     lists:reverse(lists:keysort(2, Res0)).
+    
+other(Pid, [{Pid, _}, {Other, _}]) when is_pid(Pid) -> Other;
+other(Pid, [{Other, _}, {Pid, _}]) when is_pid(Pid) -> Other;
+other(Nick, [{_, Nick}, {_, Other}]) when is_binary(Nick) -> Other;
+other(Nick, [{_, Other}, {_, Nick}]) when is_binary(Nick) -> Other.
+    
+is_in_game(Pid, Game) when is_pid(Pid) ->
+    is_in_game(Pid, 1, Game);
+is_in_game(Nick, Game) when is_binary(Nick) ->
+    is_in_game(Nick, 2, Game).
+
+is_in_game(Value, Offset, #game{players = Players}) ->
+    false =/= lists:keyfind(Value, Offset, Players).
     
