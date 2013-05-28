@@ -126,19 +126,19 @@ handle_cast(Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({tcp, _Socket, DataBin}, State) ->
+handle_info({tcp, S, DataBin}, State) ->
 	Data0 = DataBin,
 	Data = State#state.buffer++Data0,
-	?DBG("~ngot tcp packet:~n~p~n", [Data]),
-	try xmerl_scan:string(Data) of  %trying to parse Data as XML
+	%% ?DBG("~ngot tcp packet:~n~p~n", [Data]),
+	try xmerl_scan:string(Data, [{quiet, true}]) of  %trying to parse Data as XML
 		{Element, Tail} ->
 			try handle_xml(Element,State) of
 				{ok, State1} ->          % the case when player does not need to asnwer
-					{noreply, State1#state{buffer=Tail}};
+					handle_info({tcp, S, ""}, State1#state{buffer=Tail});
 				{ok, State1, Msg} ->      % the case when player has to answer
 					gen_tcp:send(State#state.socket,Msg),
 					?DBG("gameid: ~p", [State1#state.gameId]),
-					{noreply, State1#state{buffer=Tail}};
+					handle_info({tcp, S, ""}, State1#state{buffer=Tail});
 				{stop, Reason, Msg} ->    % error
 					gen_tcp:send(State#state.socket,Msg),
 					gen_tcp:close(State#state.socket),
@@ -155,7 +155,7 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 			end
 	catch
 		ErrType:ErrMsg ->
-			?DBG("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
+			%% ?DBG("Error parsing: ~p~n", [{ErrType,ErrMsg}]),
 			{noreply,State#state{buffer = Data}}
 	end;
 handle_info({tcp_closed, _Socket}, State) ->
