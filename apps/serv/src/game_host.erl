@@ -121,7 +121,10 @@ handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(start_round, State=#state{pending_games=[], active_games=[]}) ->
-    ?ALERT("Championship has ended!!!~n~p", [?s.finished_games]),
+    Players0 = collect_players(?s.finished_games),
+    Players1 = count_victories(Players0, ?s.finished_games),
+    Players = lists:keysort(2, Players1),
+    ?ALERT("Championship has ended!!!~n~p~n~p", [Players, ?s.finished_games]),
     {noreply, ?s{mode = normal}};
 handle_info(start_round, State) ->
     ?NOTICE("active_games:~n~p~npending games: ~n~p~npending players: ~n~p", 
@@ -213,3 +216,17 @@ choose_games({PG, PP}) ->
 		end
 	end,
     lists:foldl(F, {[], [], PP}, PG).
+
+collect_players(Games) ->
+    Pairs = [ [Nick1, Nick2] || #game{players=[{Nick1, _}, {Nick2, _}]} <- Games ],
+    lists:usort(lists:flatten(Pairs)).
+
+count_victories(Players0, Games) ->
+    Players1 = [ {Nick, 0} || Nick <- Players0 ],
+    D = dict:from_list(Players1),
+    F = fun(Game, Dict) ->
+		dict:update_counter(Game#game.winner, 1, Dict)
+	end,
+    D1 = lists:foldl(F, D, Games),
+    dict:to_list(D1).
+    
