@@ -18,7 +18,7 @@
 	]).
 
 %% protocol client
--export([login_response/0, login_response/1]).
+-export([login_response/0, login_response/1, champions_list/1]).
 -export([error/1]).
 
 %% protocol gm
@@ -135,6 +135,11 @@ pong() ->
 %%%===================================================================
 %%% client messages
 %%%===================================================================
+
+champions_list(Results) ->
+    Players = [ {player, [{nick, Nick}, {won, Won}, {lost, Lost}], []}
+		|| {Nick, Won, Lost} <- Results ],
+    msg({message, [{type, championsList}], Players}).
 
 login_response() ->
     msg({message, [{type,loginResponse}], [{response, [{accept, yes}], []}]}).

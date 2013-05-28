@@ -105,14 +105,16 @@ handle_cast({check, _GameType}, State) ->
 handle_cast({game_ended, _RoomPid, _GameId, _WL}, State = #state{mode = normal}) ->
     {noreply, State};
 
-handle_cast({game_ended, _RoomPid, GameId, _WL}, State = #state{mode = championship}) ->
+handle_cast({game_ended, _RoomPid, GameId, WL}, State = #state{mode = championship}) ->
     case lists:keytake(GameId, #game.id, State#state.active_games) of
 	false ->
 	    {stop, {error, unknown_running_game}, State};
 	{value, Room, AG1} ->
 	    PP = Room#game.players ++ ?s.pending_players,
+	    {Winner, Loser} = WL,
+	    Room1 = Room#game{winner = Winner, loser = Loser},
 	    self() ! start_round,
-	    {noreply, ?s{finished_games = [Room | ?s.finished_games],
+	    {noreply, ?s{finished_games = [Room1 | ?s.finished_games],
 			 pending_players = PP, 
 			 active_games = AG1
 			 }}
@@ -124,7 +126,12 @@ handle_info(start_round, State=#state{pending_games=[], active_games=[]}) ->
     Players0 = collect_players(?s.finished_games),
     Players1 = count_victories(Players0, ?s.finished_games),
     Players = lists:keysort(2, Players1),
+    ResultXml = sxml:champions_list(Players),
+    Clients = get_all_clients(?s.finished_games),
+    ?ALERT("~n~nClients: ~p~n~n", [Clients]),
+
     ?ALERT("Championship has ended!!!~n~p~n~p", [Players, ?s.finished_games]),
+    [ client:send(Pid, ResultXml) || {Pid, _} <- Clients ],
     {noreply, ?s{mode = normal}};
 handle_info(start_round, State) ->
     ?NOTICE("active_games:~n~p~npending games: ~n~p~npending players: ~n~p", 
@@ -218,15 +225,26 @@ choose_games({PG, PP}) ->
     lists:foldl(F, {[], [], PP}, PG).
 
 collect_players(Games) ->
-    Pairs = [ [Nick1, Nick2] || #game{players=[{Nick1, _}, {Nick2, _}]} <- Games ],
+    Pairs = [ {Nick1, Nick2} || #game{players=[{_, Nick1}, {_, Nick2}]} <- Games ],
+    {A, B} = lists:unzip(Pairs),
+    lists:usort(A++B).
+
+get_all_clients(Games) ->
+    Pairs = [ Players || #game{players = Players} <- Games ],
     lists:usort(lists:flatten(Pairs)).
 
 count_victories(Players0, Games) ->
     Players1 = [ {Nick, 0} || Nick <- Players0 ],
-    D = dict:from_list(Players1),
-    F = fun(Game, Dict) ->
-		dict:update_counter(Game#game.winner, 1, Dict)
-	end,
-    D1 = lists:foldl(F, D, Games),
-    dict:to_list(D1).
+    Won0 = dict:from_list(Players1),
+    Lost0 = dict:from_list(Players1),
+    FW = fun(Game, Dict) ->
+		 dict:update_counter(Game#game.winner, 1, Dict)
+	 end,
+    Won1 = lists:sort(dict:to_list(lists:foldl(FW, Won0, Games))),
+    FL = fun(Game, Dict) ->
+		 dict:update_counter(Game#game.loser, 1, Dict)
+	 end,
+    Lost1 = lists:sort(dict:to_list(lists:foldl(FL, Lost0, Games))),
+    Res0 = [ {Nick, Won, Lost} || {{Nick, Won}, {Nick, Lost}} <- lists:zip(Won1, Lost1)],
+    lists:reverse(lists:keysort(2, Res0)).
     

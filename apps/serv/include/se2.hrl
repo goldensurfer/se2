@@ -9,6 +9,7 @@
 	  id :: game_id(),
 	  game_type :: binary(),
 	  players :: [player()],
-	  winner :: nick()
+	  winner :: nick(),
+	  loser :: nick()
 	 }).
 -type game() :: #game{}.
