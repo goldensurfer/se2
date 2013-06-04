@@ -11,7 +11,10 @@
 %% API
 -include_lib("serv/include/se2.hrl").
 
--export([start_all/3, start_all/4, start/0]).
+-export([start_all/2, start_all/3, start_all/4, start/0]).
+
+start_all(Host, Port) ->
+    start_all(Host, Port, 0, ?MAGIC).
 
 start_all(Host, Port, Id) ->
     start_all(Host, Port, Id, ?MAGIC).
