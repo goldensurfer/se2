@@ -49,7 +49,7 @@
 %%--------------------------------------------------------------------
 start_link(Address, Port, Nick) ->
 	lager:start(),
-	lager:set_loglevel(lager_console_backend, debug),
+	lager:set_loglevel(lager_console_backend, info),
 	gen_server:start_link({local,?MODULE}, ?MODULE, [Address, Port, Nick], []).
 
 
@@ -246,7 +246,7 @@ handle_xml(E, State) ->
 			msgInfo(error,State),
 			#xmlElement{content=Content}  = E,
 			[#xmlText{value=Error}] = Content,
-			?DBG("Received error: ~p~n",[Error]),
+			?ERROR("Received error: ~p~n",[Error]),
 			{stop, Error, errorMsg(State#state.nick)};
 		"loginResponse" ->
 			msgInfo(loginResponse, State),
@@ -254,19 +254,19 @@ handle_xml(E, State) ->
 			Accept = gav(accept,E1),
 			case Accept of
 				"no" ->
-					?DBG("Login denied!~n", []),
+					?ERROR("Login denied!~n", []),
 					E2 = gse(error,E),
 					ErrorId = gav(id, E2),
-					?DBG("Error id = ~p: ", [ErrorId]),
+					?ERROR("Error id = ~p: ", [ErrorId]),
 					case ErrorId of
 						"1" ->
-							?DBG("wrong nick.~n",[]);
+							?ERROR("wrong nick.~n",[]);
 						"2" ->
-							?DBG("improper game type.~n",[]);
+							?ERROR("improper game type.~n",[]);
 						"3" ->
-							?DBG("players pool overflow.~n",[]);
+							?ERROR("players pool overflow.~n",[]);
 						"5" ->
-							?DBG("wrong game type description data")
+							?ERROR("wrong game type description data")
 					end;
 				"yes" ->
 					?DBG("Login accepted by server ~p!~n", [State#state.address])
@@ -277,11 +277,15 @@ handle_xml(E, State) ->
 			_GameId = gav(id, gse(gameId, E)),
 			case gse({nextPlayer, gameOver}, E) of
 				{false, E3} ->
-					?DBG("Game Over!~n", []),
+					?NOTICE("Game Over!~n", []),
 					#xmlElement{content=Content} = E3,
 					Players = getPlayers(Content),
-					Players1 = lists:foldl(fun(Elem, Result) -> [{gav(nick,Elem),gav(result, Elem)}|Result] end, [],Players),
-					lists:foreach(fun({Nick,Result}) -> ?DBG("Player ~p is a ~p.~n",[Nick,Result]) end, Players1),
+					Players1 = lists:foldl(fun(Elem, Result) -> 
+								       [{gav(nick,Elem),gav(result, Elem)}|Result] 
+							       end, [],Players),
+					lists:foreach(fun({Nick,Result}) -> 
+							      ?NOTICE("Player ~p is a ~p.~n",[Nick,Result]) 
+						      end, Players1),
                                         true = ets:delete_all_objects(State#state.positions),
 					{ok,State, thankYouMsg(State#state.gameId)};
 				{E2, false} ->
@@ -327,11 +331,16 @@ handle_xml(E, State) ->
 			msgInfo(serverShutdown,State),
 			{ok, State};
 		"championsList" ->
+		?DBG("got championsList:~n~p",[E]),
 			msgInfo(championsList,State),
 			#xmlElement{content=Content} = E,
 			Players = getPlayers(Content),
-			Players1 = lists:foldl(fun(Elem, Result) -> [{gav(nick,Elem),gav(won, Elem),gav(lost,Elem)}|Result] end, [], Players),
-			lists:foreach(fun({Nick,Won,Lost}) -> ?DBG("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, Players1),
+			Players1 = lists:foldl(fun(Elem, Result) -> 
+						       [{gav(nick,Elem),gav(won, Elem),gav(lost,Elem)}|Result] 
+					       end, [], Players),
+			lists:foreach(fun({Nick,Won,Lost}) -> 
+					      ?NOTICE("Player ~p: won - ~p, lost - ~p.~n",[Nick,Won,Lost]) end, 
+				      Players1),
 			{ok, State}
 	end.
 
