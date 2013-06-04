@@ -76,5 +76,5 @@ Uses separate module for tic-tac-toe logic, otherwise it is pretty simplistic.
 Can host multiple games at the same time.
 
 Modules:
-* gm_client - handles communication with game_master
+* gm_client - handles communication with server
 * ttt - 5-in-line-tick-tack-toe game logic
