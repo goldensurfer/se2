@@ -8,24 +8,25 @@ To compile:
 
 `make all`
 
+Note - all executables are in ./bin/
 
 To run server in championshp do:
 
-`./server.sh --championship "5-in-line-tic-tac-toe" XX --port ZZZZ`
+`./server --championship "5-in-line-tic-tac-toe" XX --port ZZZZ`
 
 where XX is the number of players who must connect before championship may start and ZZZZ is the port number to listen on.
 
 
 To run GM do:
 
-`./master.sh --connect_to IP:PORT`
+`./master --connect_to HOST:PORT`
 
 where IP:PORT is the address of the game server.
 
 
 To run player do:
 
-`./player.sh --connect_to hostname IP:PORT --nick NICK`
+`./player --connect_to HOST:PORT --nick NICK`
 
 
 Definition of the player - a process that knows:
@@ -44,7 +45,6 @@ Player does:
 Communication with server:
 
 - adding incoming stream to a buffer until a correct XML message is recognized,
-
 - otherwise fire an error and crash.
 
 
