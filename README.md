@@ -12,16 +12,14 @@ To run server in championshp do:
 
 `./bin/server --championship "5-in-line-tic-tac-toe" XX --port ZZZZ`
 
-where XX is the number of players who must connect before championship may start
-and ZZZZ is the port number to listen on.
+where XX is the number of players who must connect before championship may start and ZZZZ is the port number to listen on.
 
 
 To run GM do:
 
 `./bin/master --connect_to HOST:PORT`
 
-where IP:PORT is the address of the game server. Note, port at which server is
-listening for game master is defined in serv.config and is set to 2091 by default.
+where IP:PORT is the address of the game server. Note, port at which server is listening for game master is defined in serv.config and is set to 2091 by default.
 
 
 To run player do:
@@ -29,12 +27,18 @@ To run player do:
 `./bin/player --connect_to HOST:PORT --nick NICK`
 
 ===REPL===
+
 All three applications accept following command:
+
 % to set verbosity of logging into console do
-lager:set_loglevel(lager_console_backend, Level). %% where Level is debug, info, notice, error, alert
+
+`lager:set_loglevel(lager_console_backend, Level).` %% where Level is debug, info, notice, error, alert
+
 Server:
+
 % to display debug information about games of championship do
-game_host:list().
+
+`game_host:list().`
 
 Note: . (dot) at the end of commands is obligatory!
 
@@ -53,6 +57,8 @@ Player does:
 - sending correct messages as responses for particular incoming messages,
 - connecting to a given server.
 
+Player includes some basic Artificial Intelligence. Each time it finds neighbors of its symbols and if one of them is empty, it tries to fill it with his mark. If impossible, random move is done, but using only unoccupied coordinates.
+
 Communication with server:
 
 - adding incoming stream to a buffer until a correct XML message is recognized,
@@ -62,8 +68,8 @@ Communication with server:
 For further reading refer to apps/play/src/gamer.erl - there are comments describing particular functions.
 
 ==Server==
-Server is implemented as Erlang/OTP application. It should be easy to make it
-very reliable, however no special effort was undertaken.
+
+Server is implemented as Erlang/OTP application. It should be easy to make it very reliable, however no special effort was undertaken.
 * it can host very many games and clients simultaniously
 * it is functional, uses actor model
 * it is multi-threaded (VM level processes, 300b per process)
@@ -73,6 +79,7 @@ very reliable, however no special effort was undertaken.
 * it makes heavy use of Ulf Wieger's gproc for process registration.
 
 Modules:
+
 * game_host - creation of games, championship management
 * room - manages single game, player move's timeouts
 * client - manages TCP connection of a player. This process also does parsing
@@ -82,6 +89,7 @@ Modules:
 * *_sup modules - OTP supervisors, for supervision trees
 
 ==Game master==
+
 Uses separate module for tic-tac-toe logic, otherwise it is pretty simplistic.
 Can host multiple games at the same time.
 
