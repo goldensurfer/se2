@@ -216,6 +216,7 @@ begin_game(GameId, Players, State) ->
 	    Key = {n, l, {game, GameId}},
 	    case gproc:reg_or_locate(Key) of
 		{Self, _} ->
+		    ?NOTICE("Starting game ~p for ~p", [GameId, Players]),
 		    {ok, GamePid} = games_sup:add_child(self(), GameId, Players),
 		    gproc:give_away(Key, GamePid),
 		    {ok, State};
@@ -232,6 +233,7 @@ begin_game(GameId, Players, State) ->
 %%% Helpers
 %%%===================================================================
 finish_login(State) ->
+    ?NOTICE("Logged in!", []),
     {ok, State}.
 
 rec(State) ->
