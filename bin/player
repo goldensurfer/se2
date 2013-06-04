@@ -1,6 +1,9 @@
 #!/bin/bash
 
-OPTS_COMMON="-pa ../apps/*/ebin -pa ../deps/*/ebin -env ERL_CRASH_DUMP_SECONDS 1 -boot start_sasl"
+MYPATH="`dirname \"$0\"`"
+cd $MYPATH/..
+
+OPTS_COMMON="-pa apps/*/ebin -pa deps/*/ebin -env ERL_CRASH_DUMP_SECONDS 1 -boot start_sasl"
 
 usage() {
     echo usage: `basename $0` --connect_to IP:PORT --nick NICK
