@@ -1,10 +1,12 @@
 [{serv, [
 	 {client_port, 2090},
-	 {gm_port, 2091}
+	 {gm_port, 2091},
+	 {mode, normal},
+	 {invites, 4}
 	]},
  {lager, [
 	  {handlers, [
-		      {lager_console_backend, info},
+		      {lager_console_backend, notice},
 		      {lager_file_backend, [
 					    {"log/critical.log", critical, 10485760, "$D0", 5},
 					    {"log/error.log", error, 10485760, "$D0", 5},

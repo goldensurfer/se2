@@ -11,13 +11,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join/2, publish/2, to_gm/2]).
+-export([start_link/4, join/2, publish/2, to_gm/2, end_game/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
 -include_lib("serv/include/logging.hrl").
+-include_lib("serv/include/se2.hrl").
 
 -define(SERVER, ?MODULE). 
 
@@ -25,16 +26,15 @@
 
 -record(state, {
 	  timer,
-	  id :: any(),
-	  type :: any(),
+	  id :: game_id(),
+	  type :: binary(),
 	  gm :: pid(),
 	  gm_ref :: reference(),
-	  players = [] :: [{pid(), binary()}],
-	  target = [] :: [{pid(), binary()}],
+	  players = [] :: [player()],
+	  target = [] :: [player()],
 	  captured = [] :: [{pid(), tag()}],
 	  playing = false
 	 }).
--define(s, State#state).
 
 %%%===================================================================
 %%% API
@@ -52,12 +52,15 @@ publish(Pid, Msg) ->
 to_gm(Pid, Msg) ->
     gen_server:call(Pid, {to_gm, Msg}).
 
+end_game(Pid, WL) ->
+    Pid ! {game_ended, WL}.
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 init([GameId, GameType, GMPid, Players]) ->
-    ?INFO("starting room", []),
+    ?INFO("starting room for ~p", [Players]),
     {ok, TRef} = timer:send_after(1000, players_too_slow),
     {ok, #state{timer = TRef, id = GameId, type = GameType,
 		gm = GMPid, target = Players,
@@ -71,18 +74,18 @@ handle_call({join, {Pid, Nick}}, From,
     Captured = [From | ?s.captured],
     case Target of
 	[] ->
-	    ?INFO("starting game! ~p", [?s.id]),
+	    ?NOTICE("starting game! ~p. Players: ~p", [?s.id, Players]),
 	    [ gen_server:reply(Client, true) || Client <- Captured ],
 	    timer:cancel(?s.timer),
 	    Nicks = [ ANick || {_, ANick} <- Players ],
 	    gproc:reg({n, l, {room, ?s.id}}),
 	    gm:begin_game(?s.gm, ?s.id, Nicks),
-	    {noreply, State#state{playing = true, captured = [], 
-				  target = [], players = Players}};
+	    {noreply, ?s{playing = true, captured = [], 
+			 target = [], players = Players}};
 	_ ->
 	    ?INFO("need more..", []),
-	    {noreply, State#state{captured = Captured, 
-				  target = Target, players = Players}}
+	    {noreply, ?s{captured = Captured, 
+			 target = Target, players = Players}}
     end;
 handle_call({publish, Msg}, _From, State) ->
     [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
@@ -97,8 +100,9 @@ handle_cast(_Msg, State) ->
     {stop, {odd_cast, _Msg}, State}.
 
 handle_info(players_too_slow, State = #state{playing = false}) ->
-    ?INFO("players are too slow, shutting room down", []),
+    ?WARNING("players are too slow, shutting room down", []),
     [ gen_server:reply(Client, {error, someone_was_too_slow}) || Client <- ?s.captured ],
+    game_host:game_ended(self(), ?s.id, undefined),
     {stop, normal, State};
 handle_info(players_too_slow, State) ->
     {noreply, State};
@@ -108,15 +112,20 @@ handle_info({'DOWN', MonRef, _Type, _Object, Info},
     Msg = sxml:error(io_lib:fwrite(MsgT, [Info])),
     [ client:send(Pid, Msg) || {Pid, _} <- ?s.players ],
     {stop, {gm_crash, Info}, State};
+handle_info({game_ended, {Winner, Loser} = WL}, State) ->
+    ?NOTICE("game ~p ended. ~p has beat ~p", [?s.id, Winner, Loser]),
+    [ client:game_ended(Pid) || {Pid, _} <- ?s.players ],
+    game_host:game_ended(self(), ?s.id, WL),
+    {stop, normal, State};
 handle_info({'DOWN', _MonRef, _Type, Pid, Reason} = Info, State) ->
     case lists:keyfind(Pid, 1, ?s.players) of
-	{Pid, Nick} ->
-	    MsgT = "Player ~p has crashed with msg: ~p",
-	    Msg = sxml:error(io_lib:fwrite(MsgT, [Nick, Info])),
-	    [ client:send(APid, Msg) || {APid, _} <- ?s.players ],
-	    {stop, {player_crashed, Reason}, State};
+	{Pid, Loser} ->
+	    MsgT = "Player ~p has crashed with reason: ~p",
+	    ?WARNING(MsgT, [Loser, Reason]),
+	    [{_, Winner}] = ?s.players -- [{Pid, Loser}],
+	    handle_info({game_ended, {Winner, Loser}}, State);
 	false ->
-	    {stop, {odd_info, Info}, State}
+	    {stop, {odd_down, Info}, State}
     end;
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.

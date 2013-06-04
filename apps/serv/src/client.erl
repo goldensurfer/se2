@@ -17,7 +17,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join_game/4, send/2]).
+-export([start_link/4, join_game/4, join_ch_game/4, game_ended/1,
+	 join_championship/2, send/2]).
 
 -export([t/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
@@ -28,20 +29,21 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
--define(s, State#state).
 
 -record(state, {
 	  nick :: any(),
 	  socket,
 	  transport,
 	  buffer = [],
-	  pl_state :: gs()
+	  pl_state :: gs(),
+	  is_tournament = false :: boolean()
 	 }).
 
--type gs() :: undefined | error | registered | tournament | playing.
+-type gs() :: undefined | error | registered | playing.
 -type state() :: #state{}.
 -type msg() :: binary().
 
+-include_lib("serv/include/se2.hrl").
 -include_lib("serv/include/logging.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -54,10 +56,19 @@ start_link(ListenerPid, Socket, Transport, Opts) ->
     gen_server:start_link(?MODULE, [ListenerPid, Socket, Transport, Opts], []).
 
 send(Pid, Msg) ->
-    gen_server:cast(Pid, Msg).
+    gen_server:cast(Pid, {send, Msg}).
 
 join_game(Pid, GameType, GamePid, GameId) ->
     gen_server:cast(Pid, {join_game, GameType, GamePid, GameId}).
+
+join_ch_game(Pid, GameType, GamePid, GameId) ->
+    gen_server:cast(Pid, {join_ch_game, GameType, GamePid, GameId}).
+
+join_championship(Pid, GameType) ->
+    gen_server:cast(Pid, {join_championship, GameType}).
+
+game_ended(Pid) ->
+    gen_server:cast(Pid, game_ended).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -74,34 +85,52 @@ init([ListenerPid, Socket, Transport, _Opts = []]) ->
 handle_call(Request, _From, State) ->
     {stop, {odd_call, Request}, State}.
 
-handle_cast({join_game, GameType, GamePid, _GameId}, State) ->
+handle_cast({join_game, GameType, GamePid, _GameId} = Msg, 
+	    State = #state{pl_state = registered}) ->
+    ?INFO("join_game ~p", [Msg]),
     gproc:munreg(p, l, [{registered_for_game, GameType}, {registered}]),
     case room:join(GamePid, ?s.nick) of
 	true ->
-	    {noreply, State#state{pl_state = playing}};
+	    {noreply, ?s{pl_state = playing}};
 	{error, _} ->
 	    gproc:reg(p, l, [{{registered_for_game, GameType}, ?s.nick}, 
 			     {{registered}, GameType}]),
 	    {noreply, State}
     end;
+handle_cast({join_ch_game, _GameType, GamePid, _GameId} = Msg, 
+	    State = #state{pl_state = registered, is_tournament = true}) ->
+    ?INFO("join_game ~p", [Msg]),
+    case room:join(GamePid, ?s.nick) of
+	true ->
+	    {noreply, ?s{pl_state = playing}};
+	{error, _} ->
+	    {noreply, State}
+    end;
+handle_cast(game_ended, State = #state{pl_state = playing}) ->
+    {noreply, ?s{pl_state = registered}};
+handle_cast({join_championship, GameType}, State = #state{pl_state = registered}) ->
+    gproc:munreg(p, l, [{registered_for_game, GameType}, {registered}]),
+    {noreply, ?s{pl_state = registered, is_tournament = true}};
+handle_cast({send, Msg}, State) ->
+    gen_tcp:send(?s.socket, Msg),
+    {noreply, State};
 handle_cast(Msg, State) ->
-    gen_tcp:send(State#state.socket, Msg),
-    {noreply, State}.
-%% handle_cast(Msg, State) ->
-%%     {stop, {odd_cast, Msg}, State}.
+    {stop, {odd_cast, Msg}, State}.
 
-handle_info({tcp, _Socket, DataBin}, State) ->
+handle_info({tcp, S, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
-    ?DBG("got data: ~p", [Data0]),
-    Data = State#state.buffer++Data0,
-    try xmerl_scan:string(Data) of
+    %% ?DBG("got data: ~p", [Data0]),
+    Data = ?s.buffer++Data0,
+    try xmerl_scan:string(Data, [{quiet, true}]) of
 	{Element, Tail} ->
 	    try handle_xml(Element, State) of
 		{ok, State1} ->
-		    {noreply, rec(State1#state{buffer = Tail})};
+		    handle_info({tcp, S, <<>>}, 
+				rec(State1#state{buffer = Tail}));
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
-		    {noreply, rec(State1#state{buffer = Tail})};
+		    handle_info({tcp, S, <<>>}, 
+				rec(State1#state{buffer = Tail}));
 		{stop, Reason, State1 = #state{socket = Socket}} ->
 		    gen_tcp:close(Socket),
 		    {stop, Reason, State1};
@@ -111,17 +140,17 @@ handle_info({tcp, _Socket, DataBin}, State) ->
 		    {stop, Reason, State}
 	    catch 
 		error:{stop, Reason, State = #state{}} ->
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:close(?s.socket),
 		    {stop, Reason, State};
 		error:{stop, Reason, Msg} ->
-		    gen_tcp:send(State#state.socket, Msg),
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:send(?s.socket, Msg),
+		    gen_tcp:close(?s.socket),
 		    {stop, Reason, State}
 	    end
     catch
 	ErrType:ErrMsg ->
-	    ?DBG("parsing xml: ~p", [{ErrType, ErrMsg}]),
-	    {noreply, rec(State#state{buffer = Data})}
+	    %% ?DBG("parsing xml: ~p", [{ErrType, ErrMsg}]),
+	    {noreply, rec(?s{buffer = Data})}
     end;
 handle_info({accept_ack, ListenerPid}, State) ->
     ranch:accept_ack(ListenerPid),
@@ -142,7 +171,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 rec(State) ->
-    inet:setopts(State#state.socket, [{active, true}]),
+    inet:setopts(?s.socket, [{active, true}]),
     State.
 
 %% this function handles Players's specific part of XML protocol. 
@@ -174,9 +203,12 @@ handle_xml(E, State) ->
 	    E1 = gse(gameId, E), 
 	    MoveEl = gse(move, E),
 	    TheId = gav(id, E1),
-	    ?INFO("msg type: ~p, id: ~p", [Type, TheId]),
 	    case gproc:where({n, l, {room, TheId}}) of
 		Pid when is_pid(Pid) ->
+		    %% E3 = gse(tic, MoveEl),
+		    %% X = gav(x, E3),
+		    %% Y = gav(y, E3),
+		    %% ?DEBUG("~p moves to ~p, id: ~p", [?s.nick, {X, Y}, TheId]),
 		    room:to_gm(Pid, sxml:move(TheId, MoveEl)),
 		    {ok, State};
 		_ ->
@@ -193,7 +225,7 @@ handle_xml(E, State) ->
 	"thank you" ->
 	    E1 = gse(gameId, E),
 	    TheId = gav(id, E1),
-	    ?NOTICE("msg type: ~p, id: ~p", [Type, TheId]),
+	    ?NOTICE("~p says: ~p, id: ~p", [?s.nick, Type, TheId]),
 	    {ok, State};
 	X ->
 	    ErrMsg = io_lib:fwrite("unknown message type: ~p", [X]),

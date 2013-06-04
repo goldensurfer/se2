@@ -4,3 +4,5 @@ log
 erl_crash.dump
 .eunit
 rel/serv
+/serv.config
+/ugs.xml

@@ -41,8 +41,6 @@
 -type state() :: #state{}.
 -type msg() :: binary().
 
--define(s, State#state).
-
 -include_lib("serv/include/se2.hrl").
 -include_lib("serv/include/logging.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
@@ -97,7 +95,6 @@ handle_call({next_player, Id, Player, GS}, _From, State) ->
     {reply, ok, State};
 handle_call({game_over, Id, {Winner, Loser}, GS}, _From, State) ->
     ?NOTICE("game over: ~p", [{Id, {Winner, Loser}, GS}]),
-    %% timer:sleep(1000),
     gen_tcp:send(?s.socket, sxml:game_over(Id, {Winner, Loser}, GS)),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
@@ -105,30 +102,32 @@ handle_call(_Request, _From, State) ->
     {reply, Reply, State}.
 
 handle_cast(Msg, State) ->
-    gen_tcp:send(State#state.socket, Msg),
+    gen_tcp:send(?s.socket, Msg),
     {noreply, State}.
 
-handle_info({tcp, _Socket, DataBin}, State) ->
+handle_info({tcp, S, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
-    ?DBG("got data: ~p", [Data0]),
-    Data = State#state.buffer++Data0,
-    try xmerl_scan:string(Data) of
+    %% ?DBG("got data: ~p", [Data0]),
+    Data = ?s.buffer++Data0,
+    try xmerl_scan:string(Data, [{quiet, true}]) of
 	{Element, Tail} ->
 	    case handle_xml(Element, State) of
 		{ok, State1} ->
-		    {noreply, rec(State1#state{buffer = Tail})};
+		    handle_info({tcp, S, <<"">>}, 
+				rec(State1#state{buffer = Tail}));
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
-		    {noreply, rec(State1#state{buffer = Tail})};
+		    handle_info({tcp, S, <<"">>}, 
+				rec(State1#state{buffer = Tail}));
 		{stop, Reason, Msg} ->
-		    gen_tcp:send(State#state.socket, Msg),
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:send(?s.socket, Msg),
+		    gen_tcp:close(?s.socket),
 		    {stop, Reason, State}
 	    end
     catch
 	ErrType:ErrMsg ->
-	    ?DBG("parsing xml: ~p", [{ErrType, ErrMsg}]),
-	    {noreply, rec(State#state{buffer = Data})}
+	    %% ?DBG("parsing xml: ~p", [{ErrType, ErrMsg}]),
+	    {noreply, rec(?s{buffer = Data})}
     end;
 handle_info({tcp_closed, _}, State) ->
     {stop, server_has_closed_connection, State};
@@ -154,7 +153,7 @@ msg(Msg) ->
 			{ok, NewState::state(), Response::msg()} |
 			{stop, Error::atom(), ErrorMsg::msg()}.
 handle_xml(E, State) ->
-    ?DBG("~p", [{E, State}]),
+    %% ?DBG("~p", [{E, State}]),
     Type = gav(type, E),
     case Type of
 	"error" ->
@@ -236,7 +235,7 @@ finish_login(State) ->
     {ok, State}.
 
 rec(State) ->
-    inet:setopts(State#state.socket, [{active, true}]),
+    inet:setopts(?s.socket, [{active, true}]),
     State.
 
     

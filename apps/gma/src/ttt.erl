@@ -23,6 +23,8 @@
 
 -define(SERVER, ?MODULE). 
 
+-define(RANGE, {0, 19}).
+
 -type who() ::  xs | os.
 -type x() ::  integer().
 -type y() ::  x().
@@ -33,7 +35,7 @@
 	  players :: [binary()],
 	  board = ets:new(board_state, []) :: ets:tid(),
 	  next = xs :: who(),
-	  range = {0, 19} :: {non_neg_integer(), non_neg_integer()},
+	  range = ?RANGE :: {non_neg_integer(), non_neg_integer()},
 	  history = [] :: list({who(), x(), y()})
 	 }).
 
@@ -74,21 +76,24 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
     Y = list_to_integer(Y0),
     Move = {Who, {X, Y}},
     State = add_history(Move, State0),
-    {Board, History} = get_history(State),
+    {_Board, History} = get_history(State),
     validate_board(?s.board),
     case check_range(X, Y, ?s.range) of
 	true ->
 	    case ets:insert_new(?s.board, {{X, Y}, Who}) of
 		true ->
 		    case check_victory(Who, {X, Y}, ?s.range, ?s.board) of	
-			true ->
+			{true, {Sign, XY1, XY2}} ->
 			    Winner = player(other(Who), State),
 			    WL = {Winner, player(Who, State)},
 			    gm_client:game_over(?s.id, WL, {X, Y}),
-			    ?NOTICE("game over: ~p won via 5 in line~n~p~n~p", 
-				    [Winner, History, Board]),
+			    ?DBG("History: ~p", [History]),
+			    ?NOTICE("game over: ~p(~p) won via 5 in line. ~p -> ~p", 
+				    [Winner, Sign, XY1, XY2]),
+			    PP = pp(get_full_board(State)),
+			    ?NOTICE("board:~n"++PP),
 			    {stop, normal, State};
-			false ->
+			{false, _} ->
 			    Other = other(Who),
 			    OtherNick = player(Other, State),
 			    ?DBG("next: ~p", [OtherNick]),
@@ -100,8 +105,11 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 		    Winner = player(other(Who), State),
 		    Loser = player(Who, State),
 		    WL = {Winner, Loser},
-		    ?NOTICE("game over: ~p won via move ~p to occupied position by ~p where ~p~n~p~n~p", 
-			    [Winner, {{X, Y}, Who}, Loser, Pos, History, Board]),
+		    ?DBG("History: ~p", [History]),
+		    ?NOTICE("game over: ~p(~p) won via move ~p to occupied position by ~p where ~p~n~p", 
+			    [Winner, other(Who), {{X, Y}, Who}, Loser, Pos]),
+		    PP = pp(get_full_board(State)),
+		    ?NOTICE("board:~n"++PP),
 		    gm_client:game_over(?s.id, WL, {X, Y}),
 		    {stop, normal, State}
 	    end;
@@ -109,8 +117,11 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 	    Winner = player(other(Who), State),
 	    Loser = player(Who, State),
 	    WL = {Winner, Loser},
-	    ?NOTICE("game over: ~p won via move outside the boundaries by ~p~n~p~n~p", 
-		    [Winner, Loser, History, Board]),
+	    ?DBG("History: ~p", [History]),
+	    ?NOTICE("game over: ~p(~p) won via move outside the boundaries by ~p", 
+		    [Winner, other(Who), Loser]),
+	    PP = pp(get_full_board(State)),
+	    ?NOTICE("board:~n"++PP),
 	    gm_client:game_over(?s.id, WL, {X, Y}),
 	    {stop, normal, State}
     end;
@@ -136,6 +147,22 @@ code_change(_OldVsn, State, _Extra) ->
 add_history({_Who, {_X, _Y}} = Move, 
 	    State = #state{history = History}) ->
     State#state{history = [Move | History]}.
+
+get_full_board(#state{board = Tid}) ->
+    {Min, Max} = ?RANGE,
+    Range = lists:seq(Min, Max),
+    [ [ get_pos(X, Y, Tid) || Y <- Range ] || X <- Range ].
+
+pp(Symbols) ->
+    Rows1 = [ string:join(Row, "|") || Row <- Symbols ],
+    string:join(Rows1, "~n").
+
+get_pos(X, Y, Tid) ->
+    case who(X, Y, Tid) of
+	xs -> "x";
+	os -> "o";
+	_  -> " "
+    end.
 
 get_history(#state{board = Tid, history = History}) ->
     All = ets:tab2list(Tid),
@@ -164,12 +191,28 @@ interval(Min, X, Max) ->
     Min =< X andalso X =< Max. 
     
 check_victory(Who, {X, Y}, Range, Tid) ->
-    walk(Who, {X-5, Y-5}, {1, 1}, 0, Range, Tid) orelse
-	walk(Who, {X, Y-5}, {0, 1}, 0, Range, Tid) orelse
-	walk(Who, {X-5, Y}, {1, 0}, 0, Range, Tid).
+    {BA, A} = walk(Who, {X-5, Y-5}, {1, 1}, 0, Range, Tid),
+    {BB, B} = walk(Who, {X  , Y-5}, {0, 1}, 0, Range, Tid),
+    {BC, C} = walk(Who, {X-5,   Y}, {1, 0}, 0, Range, Tid),
+    case BA of
+	true ->
+	    {BA, A};
+	false ->
+	    case BB of
+		true -> 
+		    {BB, B};
+		false ->
+		    case BC of
+			true ->
+			    {BC, C};
+			false ->
+			    {false, 0}
+		    end
+	    end
+    end.
 
-walk(_, _, _, 5, _, _) ->
-    true;
+walk(Who, {X, Y}, {DX, DY}, 5, _, _) ->
+    {true, {Who, {X-(5*DX), Y-(5*DY)}, {X, Y}}};
 walk(Who, {X, Y}, {DX, DY} = D, _, {Min, _} = R, Tid) 
   when X < Min; Y < Min ->
     walk(Who, {X+DX, Y+DY}, D, 0, R, Tid);
@@ -182,7 +225,7 @@ walk(Who, {X, Y}, {DX, DY} = D, Score, {_, Max} = R, Tid)
 	    walk(Who, {X+DX, Y+DY}, D, 0, R, Tid)
     end;
 walk(_, _, _, _, _, _) ->
-    false.
+    {false, 0}.
 
 who(X, Y, Tid) 
   when is_integer(X), is_integer(Y) ->

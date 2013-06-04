@@ -30,7 +30,6 @@
 -import(sxml, [gse/2, gav/2]).
 
 -define(SERVER, ?MODULE). 
--define(s, State#state).
 
 -record(state, {
 	  socket,
@@ -85,42 +84,44 @@ handle_cast({begin_game, _RoomPid, Id, Nicks}, State = #state{state = registered
 handle_cast(Msg, State) ->
     {stop, {odd_cast, Msg}, State}.
 
-handle_info({tcp, _Socket, DataBin}, State) ->
+handle_info({tcp, S, DataBin}, State) ->
     Data0 = binary_to_list(DataBin),
-    ?DBG("got data: ~p", [Data0]),
-    Data = State#state.buffer++Data0,
-    try xmerl_scan:string(Data) of
+    %% ?DBG("got data: ~p", [Data0]),
+    Data = ?s.buffer++Data0,
+    try xmerl_scan:string(Data, [{quiet, true}]) of
 	{Element, Tail} ->
 	    try handle_xml(Element, State) of
 		{ok, State1} ->
-		    {noreply, rec(State1#state{buffer = Tail})};
+		    handle_info({tcp, S, <<>>}, 
+				rec(State1#state{buffer = Tail}));
 		{ok, State1, Msg} ->
 		    gen_tcp:send(?s.socket, Msg),
-		    {noreply, rec(State1#state{buffer = Tail})};
+		    handle_info({tcp, S, <<>>}, 
+				rec(State1#state{buffer = Tail}));
 		{stop, Reason, State = #state{}} ->
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:close(?s.socket),
 		    ?ERROR("stopping: ~p", [Reason]),
 		    {stop, Reason, State};
 		{stop, Reason, Msg} ->
-		    gen_tcp:send(State#state.socket, Msg),
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:send(?s.socket, Msg),
+		    gen_tcp:close(?s.socket),
 		    ?ERROR("stopping: ~p~nmsg: ~p", [Reason, Msg]),
 		    {stop, Reason, State}
 	    catch 
 		error:{stop, Reason, State = #state{}} ->
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:close(?s.socket),
 		    ?ERROR("stopping: ~p", [Reason]),
 		    {stop, Reason, State};
 		error:{stop, Reason, Msg} ->
-		    gen_tcp:send(State#state.socket, Msg),
-		    gen_tcp:close(State#state.socket),
+		    gen_tcp:send(?s.socket, Msg),
+		    gen_tcp:close(?s.socket),
 		    ?ERROR("stopping: ~p~nmsg: ~p", [Reason, Msg]),
 		    {stop, Reason, State}
 	    end
     catch
 	ErrType:ErrMsg ->
-	    ?ERROR("parsing xml failed:~n~p", [{ErrType, ErrMsg}]),
-	    {noreply, rec(State#state{buffer = Data})}
+	    %% ?ERROR("parsing xml failed:~n~p", [{ErrType, ErrMsg}]),
+	    {noreply, rec(?s{buffer = Data})}
     end;
 handle_info({accept_ack, ListenerPid}, State) ->
     ranch:accept_ack(ListenerPid),
@@ -142,7 +143,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 rec(State) ->
     %% handle closed socket by receiving message
-    _ = inet:setopts(State#state.socket, [{active, true}]),
+    _ = inet:setopts(?s.socket, [{active, true}]),
     State.
 
 icl(Msg) ->
@@ -155,7 +156,7 @@ icl(Msg) ->
 			{stop, Error::atom(), ErrorMsg::msg()} |
 			{stop, Reason::atom(), NewState::state()}. %% this one is for graceful termination
 handle_xml(E, State) ->
-    ?DBG("Got xml:~n~p", [{E, State}]),
+    %% ?DBG("Got xml:~n~p", [{E, State}]),
     Type = gav(type, E),
     case Type of
 	"error" ->
@@ -189,6 +190,7 @@ handle_xml(E, State) ->
 			  [Type, GameId, Players, GS]),
 		    WL = get_winner_loser(Players),
 		    room:publish(Pid, sxml:game_over(GameId, WL, GS)),
+		    room:end_game(Pid, WL),
 		    {ok, State}
 	    end;
 	"gameMasterLogin" ->
@@ -249,6 +251,7 @@ login(Id, ?MAGIC = GameType, PlayersMin, PlayersMax, State = #state{state = unde
     case gp:reg(n, {gm, GameType}, true) of
 	true ->
 	    gproc:mreg(p, l, [{{gm_for_game, GameType}, {Id, PlayersMin, PlayersMax}}]),
+	    game_host:check_game(GameType),
 	    {ok, ?s{state = registered}, sxml:login_response()};
 	false ->
     	    {stop, already_registered, sxml:login_response(gm_already_registered)}
