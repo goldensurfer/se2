@@ -23,6 +23,8 @@
 
 -define(SERVER, ?MODULE). 
 
+-define(RANGE, {0, 19}).
+
 -type who() ::  xs | os.
 -type x() ::  integer().
 -type y() ::  x().
@@ -33,7 +35,7 @@
 	  players :: [binary()],
 	  board = ets:new(board_state, []) :: ets:tid(),
 	  next = xs :: who(),
-	  range = {0, 19} :: {non_neg_integer(), non_neg_integer()},
+	  range = ?RANGE :: {non_neg_integer(), non_neg_integer()},
 	  history = [] :: list({who(), x(), y()})
 	 }).
 
@@ -74,7 +76,8 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
     Y = list_to_integer(Y0),
     Move = {Who, {X, Y}},
     State = add_history(Move, State0),
-    {Board, History} = get_history(State),
+    {_Board, History} = get_history(State),
+    PP = pp(get_full_board(State)),
     validate_board(?s.board),
     case check_range(X, Y, ?s.range) of
 	true ->
@@ -85,8 +88,10 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 			    Winner = player(other(Who), State),
 			    WL = {Winner, player(Who, State)},
 			    gm_client:game_over(?s.id, WL, {X, Y}),
-			    ?NOTICE("game over: ~p won via 5 in line~n~p~n~p", 
-				    [Winner, History, Board]),
+			    ?DBG("History: ~p", [History]),
+			    ?NOTICE("game over: ~p(~p) won via 5 in line", 
+				    [Winner, other(Who)]),
+			    ?NOTICE("board:~n"++PP),
 			    {stop, normal, State};
 			false ->
 			    Other = other(Who),
@@ -100,8 +105,10 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 		    Winner = player(other(Who), State),
 		    Loser = player(Who, State),
 		    WL = {Winner, Loser},
-		    ?NOTICE("game over: ~p won via move ~p to occupied position by ~p where ~p~n~p~n~p", 
-			    [Winner, {{X, Y}, Who}, Loser, Pos, History, Board]),
+		    ?DBG("History: ~p", [History]),
+		    ?NOTICE("game over: ~p(~p) won via move ~p to occupied position by ~p where ~p~n~p", 
+			    [Winner, other(Who), {{X, Y}, Who}, Loser, Pos]),
+		    ?NOTICE("board:~n"++PP),
 		    gm_client:game_over(?s.id, WL, {X, Y}),
 		    {stop, normal, State}
 	    end;
@@ -109,8 +116,10 @@ handle_cast({move, X0, Y0}, State0 = #state{next = Who}) ->
 	    Winner = player(other(Who), State),
 	    Loser = player(Who, State),
 	    WL = {Winner, Loser},
-	    ?NOTICE("game over: ~p won via move outside the boundaries by ~p~n~p~n~p", 
-		    [Winner, Loser, History, Board]),
+	    ?DBG("History: ~p", [History]),
+	    ?NOTICE("game over: ~p(~p) won via move outside the boundaries by ~p", 
+		    [Winner, other(Who), Loser]),
+	    ?NOTICE("board:~n"++PP),
 	    gm_client:game_over(?s.id, WL, {X, Y}),
 	    {stop, normal, State}
     end;
@@ -136,6 +145,22 @@ code_change(_OldVsn, State, _Extra) ->
 add_history({_Who, {_X, _Y}} = Move, 
 	    State = #state{history = History}) ->
     State#state{history = [Move | History]}.
+
+get_full_board(#state{board = Tid}) ->
+    {Min, Max} = ?RANGE,
+    Range = lists:seq(Min, Max),
+    [ [ get_pos(X, Y, Tid) || Y <- Range ] || X <- Range ].
+
+pp(Symbols) ->
+    Rows1 = [ string:join(Row, "|") || Row <- Symbols ],
+    string:join(Rows1, "~n").
+
+get_pos(X, Y, Tid) ->
+    case who(X, Y, Tid) of
+	xs -> "x";
+	os -> "o";
+	_  -> " "
+    end.
 
 get_history(#state{board = Tid, history = History}) ->
     All = ets:tab2list(Tid),

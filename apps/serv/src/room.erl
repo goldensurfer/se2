@@ -74,7 +74,7 @@ handle_call({join, {Pid, Nick}}, From,
     Captured = [From | ?s.captured],
     case Target of
 	[] ->
-	    ?NOTICE("starting game! ~p", [?s.id]),
+	    ?NOTICE("starting game! ~p. Players: ~p", [?s.id, Players]),
 	    [ gen_server:reply(Client, true) || Client <- Captured ],
 	    timer:cancel(?s.timer),
 	    Nicks = [ ANick || {_, ANick} <- Players ],

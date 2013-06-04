@@ -20,7 +20,7 @@ start_all(Host, Port, Id, Game) ->
     ok = ensure(gproc, permanent),
     ok = ensure(inets, permanent),
     ok = ensure(lager, permanent),
-    lager:set_loglevel(lager_console_backend, debug),
+    lager:set_loglevel(lager_console_backend, info),
     ok = application:start(gma, permanent),
     supervisor:start_child(gma_sup, {ttt_socket, {gm_client, start_link, [Host, Port, Id, Game]},
 				     permanent, 5000, worker, [gm_client]

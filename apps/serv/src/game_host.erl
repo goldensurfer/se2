@@ -106,7 +106,8 @@ handle_cast({check, _GameType}, State) ->
 handle_cast({game_ended, _RoomPid, _GameId, _WL}, State = #state{mode = normal}) ->
     {noreply, State};
 
-handle_cast({game_ended, _RoomPid, GameId, WL}, State = #state{mode = championship}) ->
+handle_cast({game_ended, _RoomPid, GameId, WL} = Msg, State = #state{mode = championship}) ->
+    ?NOTICE("game ended: ~p", [Msg]),
     case lists:keytake(GameId, #game.id, State#state.active_games) of
 	false ->
 	    {stop, {error, unknown_running_game}, State};
@@ -129,14 +130,14 @@ handle_info(start_round, State=#state{pending_games=[], active_games=[]}) ->
     Players = lists:keysort(2, Players1),
     ResultXml = sxml:champions_list(Players),
     Clients = ?s.players,
-    ?ALERT("~n~nClients: ~p~n~n", [Clients]),
-
-    ?ALERT("Championship has ended!!!~n~p~n~p", [Players, ?s.finished_games]),
+    ?DBG("Clients: ~p", [Clients]),
+    ?NOTICE("Championship has ended!!!~n~p", [lists:keysort(2, Players)]),
+    ?ALERT("championsList: ~p",[ResultXml]),
     [ client:send(Pid, ResultXml) || {Pid, _} <- Clients ],
     {noreply, ?s{mode = normal}};
 handle_info(start_round, State) ->
-    ?NOTICE("active_games:~n~p~npending games: ~n~p~npending players: ~n~p", 
-	    [State#state.active_games, State#state.pending_games, State#state.pending_players]),
+    ?DBG("active_games:~n~p~npending games: ~n~p~npending players: ~n~p", 
+	 [State#state.active_games, State#state.pending_games, State#state.pending_players]),
     PG = ?s.pending_games,
     PP = ?s.pending_players,
     {AG1, PG1, PP1} = choose_games({PG, PP}),
@@ -151,10 +152,11 @@ handle_info({'DOWN', _MonRef, _Type, Pid, _Reason} = Info, State) ->
 	{Pid, Loser} ->
 	    F = fun(Game) -> is_in_game(Pid, Game) end,
 	    {Decided0, Left} = lists:partition(F, ?s.pending_games),
-	    ?ALERT("~npending games: ~p~n", [?s.pending_games]),
-	    ?ALERT("~nDecided0: ~p~n", [Decided0]),
-	    ?ALERT("~nLeft: ~p~n", [Left]),
-	    Decided = [ G#game{winner = other(Pid, G#game.players), loser = Loser} 
+	    ?DBG("~npending games: ~p~n", [?s.pending_games]),
+	    ?DBG("~nDecided0: ~p~n", [Decided0]),
+	    ?DBG("~nLeft: ~p~n", [Left]),
+	    ?WARNING("Player ~p has left. His next ~p games are marked as finished", [Loser, length(Decided0)]),
+	    Decided = [ G#game{winner = other(Loser, G#game.players), loser = Loser} 
 			|| G <- Decided0 ],
 	    {noreply, ?s{pending_games = Left, finished_games = Decided ++ ?s.finished_games}}
     end;
@@ -219,18 +221,14 @@ invites() ->
     end.
 
 choose_games({PG, PP}) ->
-    ?DBG("choose_games0", []),
     F = fun(H = #game{}, {AAG, APG, APP}) -> 
 		[{PidA, NickA}, {PidB, NickB}] = H#game.players,
-		?DBG("keytake ~p", [{NickA, 2, APP}]),
 		case lists:keytake(NickA, 2, APP) of
 		    false ->
-			?DBG("H: ~p, false 1", [H]),
 			{AAG, [H | APG], APP};
 		    {value, {PidA, NickA}, APP1} ->
 			case lists:keytake(NickB, 2, APP1) of
 			    false ->
-				?DBG("H: ~p, false 2", [H]),
 				{AAG, [H | APG], APP};
 			    {value, {PidB, NickB}, APP2} ->
 				{[H | AAG], APG, APP2}
@@ -243,24 +241,29 @@ get_nicks(#state{players = L}) ->
     [ Nick || {_Pid, Nick} <- L ].
 
 count_victories(Nicks, Games) ->
-    Players1 = [ {Nick, 0} || Nick <- Nicks],
-    Won0 = dict:from_list(Players1),
-    Lost0 = dict:from_list(Players1),
+    Players1 = [ {Nick, {0, 0}} || Nick <- Nicks],
+    InitDict = dict:from_list(Players1),
     FW = fun(Game, Dict) ->
-		 dict:update_counter(Game#game.winner, 1, Dict)
+		 D1 = update_counter(Game#game.winner, 1, 1, Dict),
+		 update_counter(Game#game.loser, 2, 1, D1)
 	 end,
-    Won1 = lists:sort(dict:to_list(lists:foldl(FW, Won0, Games))),
-    FL = fun(Game, Dict) ->
-		 dict:update_counter(Game#game.loser, 1, Dict)
-	 end,
-    Lost1 = lists:sort(dict:to_list(lists:foldl(FL, Lost0, Games))),
-    Res0 = [ {Nick, Won, Lost} || {{Nick, Won}, {Nick, Lost}} <- lists:zip(Won1, Lost1)],
-    lists:reverse(lists:keysort(2, Res0)).
+    Res0 = lists:keysort(2, dict:to_list(count_all(FW, Games, InitDict))),
+    Res1 = [ {Who, W, L} || {Who, {W, L}} <- Res0 ],
+    lists:reverse(Res1).
+
+count_all(FW, Games, InitDict) ->
+    lists:foldl(FW, InitDict, Games).
+
+update_counter(Key, Index, Incr, D) ->
+    dict:update(Key, fun({_,_} = Tuple) -> 
+			     Val = element(Index, Tuple) + Incr,
+			     setelement(Index, Tuple, Val)
+		     end, D).
     
 other(Pid, [{Pid, _}, {Other, _}]) when is_pid(Pid) -> Other;
 other(Pid, [{Other, _}, {Pid, _}]) when is_pid(Pid) -> Other;
-other(Nick, [{_, Nick}, {_, Other}]) when is_binary(Nick) -> Other;
-other(Nick, [{_, Other}, {_, Nick}]) when is_binary(Nick) -> Other.
+other(Nick, [{_, Nick}, {_, Other}]) when is_list(Nick) -> Other;
+other(Nick, [{_, Other}, {_, Nick}]) when is_list(Nick) -> Other.
     
 is_in_game(Pid, Game) when is_pid(Pid) ->
     is_in_game(Pid, 1, Game);
