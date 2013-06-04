@@ -28,6 +28,16 @@ To run player do:
 
 `./bin/player --connect_to HOST:PORT --nick NICK`
 
+===REPL===
+All three applications accept following command:
+% to set verbosity of logging into console do
+lager:set_loglevel(lager_console_backend, Level). %% where Level is debug, info, notice, error, alert
+Server:
+% to display debug information about games of championship do
+game_host:list().
+
+Note: . (dot) at the end of commands is obligatory!
+
 ==Player==
 
 Definition of the player - a process that knows:
