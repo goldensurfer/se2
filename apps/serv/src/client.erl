@@ -205,10 +205,10 @@ handle_xml(E, State) ->
 	    TheId = gav(id, E1),
 	    case gproc:where({n, l, {room, TheId}}) of
 		Pid when is_pid(Pid) ->
-		    E3 = gse(tic, MoveEl),
-		    X = gav(x, E3),
-		    Y = gav(y, E3),
-		    ?INFO("~p moves to ~p, id: ~p", [?s.nick, {X, Y}, TheId]),
+		    %% E3 = gse(tic, MoveEl),
+		    %% X = gav(x, E3),
+		    %% Y = gav(y, E3),
+		    %% ?DEBUG("~p moves to ~p, id: ~p", [?s.nick, {X, Y}, TheId]),
 		    room:to_gm(Pid, sxml:move(TheId, MoveEl)),
 		    {ok, State};
 		_ ->
