@@ -8,26 +8,27 @@ To compile:
 
 `make all`
 
-Note - all executables are in ./bin/
-
 To run server in championshp do:
 
-`./server --championship "5-in-line-tic-tac-toe" XX --port ZZZZ`
+`./bin/server --championship "5-in-line-tic-tac-toe" XX --port ZZZZ`
 
-where XX is the number of players who must connect before championship may start and ZZZZ is the port number to listen on.
+where XX is the number of players who must connect before championship may start
+and ZZZZ is the port number to listen on.
 
 
 To run GM do:
 
-`./master --connect_to HOST:PORT`
+`./bin/master --connect_to HOST:PORT`
 
-where IP:PORT is the address of the game server.
+where IP:PORT is the address of the game server. Note, port at which server is
+listening for game master is defined in serv.config and is set to 2091 by default.
 
 
 To run player do:
 
-`./player --connect_to HOST:PORT --nick NICK`
+`./bin/player --connect_to HOST:PORT --nick NICK`
 
+==Player==
 
 Definition of the player - a process that knows:
 
@@ -49,3 +50,31 @@ Communication with server:
 
 
 For further reading refer to apps/play/src/gamer.erl - there are comments describing particular functions.
+
+==Server==
+Server is implemented as Erlang/OTP application. It should be easy to make it
+very reliable, however no special effort was undertaken.
+* it can host very many games and clients simultaniously
+* it is functional, uses actor model
+* it is multi-threaded (VM level processes, 300b per process)
+* it's processes use preemptive scheduling
+* it is soft-realtime
+* all errors are detected early - offenders crash, restarted, application continues to work
+* it makes heavy use of Ulf Wieger's gproc for process registration.
+
+Modules:
+* game_host - creation of games, championship management
+* room - manages single game, player move's timeouts
+* client - manages TCP connection of a player. This process also does parsing
+* gm - like "client", but handles communication with game master
+* sxml - helpers for XML parsing and message construction
+* serv_acceptor - tcp listener/acceptor, uses Ranch
+* *_sup modules - OTP supervisors, for supervision trees
+
+==Game master==
+Uses separate module for tic-tac-toe logic, otherwise it is pretty simplistic.
+Can host multiple games at the same time.
+
+Modules:
+* gm_client - handles communication with game_master
+* ttt - 5-in-line-tick-tack-toe game logic
