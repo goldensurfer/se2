@@ -1,6 +1,6 @@
 #!/bin/bash
 
-OPTS_COMMON="-pa apps/*/ebin -pa deps/*/ebin -env ERL_CRASH_DUMP_SECONDS 1 -boot start_sasl"
+OPTS_COMMON="-pa ../apps/*/ebin -pa ../deps/*/ebin -env ERL_CRASH_DUMP_SECONDS 1 -boot start_sasl"
 
 usage() {
     echo usage: `basename $0` --connect HOST:PORT
