@@ -209,7 +209,8 @@ handle_xml(E, State) ->
 		    %% X = gav(x, E3),
 		    %% Y = gav(y, E3),
 		    %% ?DEBUG("~p moves to ~p, id: ~p", [?s.nick, {X, Y}, TheId]),
-		    room:to_gm(Pid, sxml:move(TheId, MoveEl)),
+		    room:move(Pid, TheId, MoveEl, {self(), ?s.nick}),
+		    %% room:to_gm(Pid, sxml:move(TheId, MoveEl)),
 		    {ok, State};
 		_ ->
 		    T = "game with gameId = ~p does not exist",

@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4, join/2, publish/2, to_gm/2, end_game/2]).
+-export([start_link/4, join/2, publish/2, to_gm/2, move/4, end_game/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -33,7 +33,9 @@
 	  players = [] :: [player()],
 	  target = [] :: [player()],
 	  captured = [] :: [{pid(), tag()}],
-	  playing = false
+	  playing = false,
+	  move_to,
+	  last_pl
 	 }).
 
 %%%===================================================================
@@ -55,6 +57,11 @@ to_gm(Pid, Msg) ->
 end_game(Pid, WL) ->
     Pid ! {game_ended, WL}.
 
+move(Pid, TheId, MoveEl, Who) ->
+    %% room:to_gm(Pid, sxml:move(TheId, MoveEl)),
+    gen_server:call(Pid, {move, TheId, MoveEl, Who}).
+
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -66,6 +73,14 @@ init([GameId, GameType, GMPid, Players]) ->
 		gm = GMPid, target = Players,
 		gm_ref = monitor(process, GMPid)
 	       }}.
+handle_call({move, TheId, MoveEl, {Pid, Nick}}, _From, State) ->
+    OldRef = State#state.move_to,
+    OldRef /= undefined andalso
+	erlang:cancel_timer(OldRef),
+    Msg = sxml:move(TheId, MoveEl),
+    gm:send(?s.gm, Msg),
+    Ref = erlang:start_timer(timer:seconds(20), self(), move_timeout),
+    {reply, ok, State#state{move_to = Ref, last_pl = {Pid, Nick}}};
 handle_call({join, {Pid, Nick}}, From, 
 	    State = #state{playing = false, target = Target0}) ->
     _Ref = monitor(process, Pid),
@@ -127,6 +142,14 @@ handle_info({'DOWN', _MonRef, _Type, Pid, Reason} = Info, State) ->
 	false ->
 	    {stop, {odd_down, Info}, State}
     end;
+handle_info({timeout, Ref, move_timeout}, State = #state{move_to = Ref1, last_pl = Pl}) when Ref =:= Ref1 ->
+    [{LoserPid, Loser}] = ?s.players -- [Pl],
+    {_, Winner} = Pl,
+    GameOver = sxml:game_over(?s.id, {Winner, Loser}, undefined),
+    [ client:send(Pid, GameOver) || {Pid, _} <- ?s.players ],
+    erlang:exit(LoserPid, move_timeout),
+    ?NOTICE("Player ~p won because player ~p took more then 20 seconds to make a move", [Winner, Loser]),
+    handle_info({game_ended, {Winner, Loser}}, State);
 handle_info(Info, State) ->
     {stop, {odd_info, Info}, State}.
 
