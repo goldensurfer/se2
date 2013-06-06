@@ -158,6 +158,7 @@ handle_info({'DOWN', _MonRef, _Type, Pid, _Reason} = Info, State) ->
 	    ?WARNING("Player ~p has left. His next ~p games are marked as finished", [Loser, length(Decided0)]),
 	    Decided = [ G#game{winner = other(Loser, G#game.players), loser = Loser} 
 			|| G <- Decided0 ],
+	    self() ! start_round,
 	    {noreply, ?s{pending_games = Left, finished_games = Decided ++ ?s.finished_games}}
     end;
 handle_info(Info, State) ->
